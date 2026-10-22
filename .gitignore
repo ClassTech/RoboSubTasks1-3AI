@@ -1,0 +1,8 @@
+__pycache__/
+ai/__pycache__/
+ai/tasks/__pycache__/
+*.pyc
+.venv/
+runs/
+runs_archive/
+.DS_Store

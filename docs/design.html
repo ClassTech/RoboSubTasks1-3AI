@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboSubQualAI Design</title>
+<style>
+  :root {
+    --bg: #fbfbf9; --surface: #ffffff; --ink: #1d2126; --ink-2: #4a525c; --ink-3: #6f7882;
+    --rule: #e2e4e7; --rule-strong: #c9cdd2; --accent: #0b6e8a; --accent-soft: #e3f1f5;
+    --code-bg: #f1f2f4; --warn: #9a5b00;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15181c; --surface: #1c2025; --ink: #e6e8eb; --ink-2: #b4bac2; --ink-3: #8b939d;
+      --rule: #2c3238; --rule-strong: #3d444c; --accent: #5cc1dc; --accent-soft: #17323b;
+      --code-bg: #242a30; --warn: #e0a64a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15181c; --surface: #1c2025; --ink: #e6e8eb; --ink-2: #b4bac2; --ink-3: #8b939d;
+    --rule: #2c3238; --rule-strong: #3d444c; --accent: #5cc1dc; --accent-soft: #17323b;
+    --code-bg: #242a30; --warn: #e0a64a;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.6 var(--serif); }
+  .page { max-width: 46rem; margin: 0 auto; padding: 3rem 16px 5rem; }
+  header { border-bottom: 1px solid var(--rule); padding-bottom: 1.5rem; margin-bottom: 2rem; }
+  .kicker { font: 600 0.78rem/1 var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  h1 { font: 700 2.3rem/1.15 var(--serif); margin: 0.6rem 0 0.5rem; letter-spacing: -0.01em; }
+  .dek { font-size: 1.15rem; color: var(--ink-2); margin: 0 0 1rem; }
+  .meta { font: 0.85rem var(--sans); color: var(--ink-3); }
+  nav.toc { font: 0.9rem/1.5 var(--sans); background: var(--surface); border: 1px solid var(--rule);
+            border-radius: 8px; padding: 1rem 1.25rem; margin: 0 0 2.5rem; }
+  nav.toc strong { display: block; font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.4rem; }
+  nav.toc ol { margin: 0; padding-left: 1.3rem; columns: 2; column-gap: 2rem; }
+  nav.toc a { color: var(--ink); text-decoration: none; }
+  nav.toc a:hover { color: var(--accent); }
+  h2 { font: 700 1.55rem/1.25 var(--serif); margin: 3rem 0 0.75rem; padding-top: 1.25rem; border-top: 1px solid var(--rule); }
+  h3 { font: 650 1.02rem/1.3 var(--sans); margin: 2rem 0 0.5rem; color: var(--ink); }
+  p, ul, ol { margin: 0 0 1rem; }
+  li { margin-bottom: 0.35rem; }
+  a { color: var(--accent); }
+  code { font: 0.84em var(--mono); background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; }
+  pre { background: var(--code-bg); border-radius: 8px; padding: 0.9rem 1rem; overflow-x: auto; font: 0.85rem/1.5 var(--mono); }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .lede { font-size: 1.12rem; }
+  .table-wrap { overflow-x: auto; margin: 0 0 1.25rem; }
+  table { width: 100%; border-collapse: collapse; font: 0.86rem/1.45 var(--sans); }
+  th { text-align: left; font-weight: 650; color: var(--ink-2); border-bottom: 1.5px solid var(--rule-strong); padding: 0.5rem 0.6rem; vertical-align: bottom; }
+  td { border-bottom: 1px solid var(--rule); padding: 0.5rem 0.6rem; vertical-align: top; }
+  td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  tr.hl td { background: var(--accent-soft); font-weight: 600; }
+  .callout { border-left: 3px solid var(--accent); background: var(--surface); padding: 0.8rem 1rem; margin: 0 0 1.25rem; border-radius: 0 6px 6px 0; font-size: 0.97rem; }
+  .callout p:last-child { margin-bottom: 0; }
+  figure { margin: 1.5rem 0; }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption { font: 0.8rem var(--sans); color: var(--ink-3); margin-top: 0.4rem; }
+  .eq { font: 1.05rem/1.6 var(--serif); font-style: italic; text-align: center; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 0.7rem 1rem; margin: 0 0 1rem; overflow-x: auto; }
+  .eq span { font-style: normal; }
+  .lessons p strong { color: var(--accent); }
+  footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule); font: 0.8rem var(--sans); color: var(--ink-3); }
+  @media (max-width: 600px) {
+    body { font-size: 16px; }
+    .page { padding-top: 2rem; }
+    h1 { font-size: 1.85rem; }
+    nav.toc ol { columns: 1; }
+  }
+  svg .box { fill: none; stroke: var(--rule-strong); stroke-width: 1.25; }
+  svg .box.main { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; }
+  svg .edge { fill: none; stroke: var(--ink-3); stroke-width: 1.25; }
+  svg .name { font: 600 13px var(--sans); fill: var(--ink); }
+  svg .sub { font: 11.5px var(--sans); fill: var(--ink-2); }
+  svg .note { font: 11.5px var(--sans); fill: var(--ink-3); }
+  svg .arrowhead { fill: var(--ink-3); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="kicker">Design document</div>
+  <h1>RoboSubQualAI</h1>
+  <p class="dek">How a simulator, two small neural networks and a short runner fly the RoboSub qualification run: what each piece does, and why it ended up that way.</p>
+  <div class="meta">Updated October 20, 2026 · Douglas Johnson · Lives in the repo at <code>docs/design.html</code>; the step-by-step log is in <code>PLAN.md</code></div>
+</header>
+
+<nav class="toc" aria-label="Contents">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#summary">Summary</a></li>
+    <li><a href="#big-picture">The big picture</a></li>
+    <li><a href="#simulator">The simulator</a></li>
+    <li><a href="#sensing">Sensing</a></li>
+    <li><a href="#perception">Perception and the observation</a></li>
+    <li><a href="#control">Low-level control</a></li>
+    <li><a href="#networks">The neural networks</a></li>
+    <li><a href="#training">How training works</a></li>
+    <li><a href="#skills">The skills</a></li>
+    <li><a href="#rewards">Reward weights</a></li>
+    <li><a href="#runner">The mission runner and done detectors</a></li>
+    <li><a href="#results">Results</a></li>
+    <li><a href="#lessons">Lessons and design decisions</a></li>
+    <li><a href="#reference">Reference</a></li>
+  </ol>
+</nav>
+
+<h2 id="summary">Summary</h2>
+<p class="lede">Two learned skills fly the RoboSub qualification run in simulation in about 97 s. The scripted mission takes about 150 s. On 180 fresh test starts the learned run succeeds 177 times, the scripted one 171.</p>
+<p>The run is: dive, pass through the gate, go around the marker pole, and come back through the gate. A gate policy and an orbit policy each learned their part by reinforcement learning (PPO). Each skill also has a small learned done detector that says when its job is finished, so the runner only puts them in order.</p>
+<p>Five ideas shape the design:</p>
+<ol>
+  <li><strong>Train only on what the real sub can sense.</strong> The policies see camera detections, depth, heading, pitch and turn rates, never the simulator's true position or speed.</li>
+  <li><strong>The policy sets targets; the sub's own control loops fly them.</strong> Ten times a second it picks a turn, a depth, a forward thrust and (for the orbit) a sideways thrust.</li>
+  <li><strong>Skip the rendering when training.</strong> A simulated detector computes the boxes the camera would see, so training runs about 290 times faster than real time.</li>
+  <li><strong>Make the simulation hard on purpose.</strong> Noisy detections, a 0.5 s thruster ramp, and gains, inertia, drag and thrust varied every run keep the policies from depending on the sim's exact numbers.</li>
+  <li><strong>Train skills separately, and let each one say when it's done.</strong> Each skill is trained, tested and watched on its own. Its done detector, learned from labeled flights, decides when to hand over; there are no hand-written switching rules.</li>
+</ol>
+<p>Running the policies on the sub's Raspberry Pi is planned but deferred. The perception, observation and control code is already written to run there unchanged.</p>
+
+<h2 id="big-picture">The big picture</h2>
+<p>The policy never drives the thrusters directly. Ten times a second it reads the observation and picks targets; the sub's ordinary control loops hold those targets 60 times a second.</p>
+<figure>
+  <svg viewBox="0 0 760 300" role="img" aria-label="The control loop: pool and sub, sensors, detection, perception, observation, policy, controller, thrusters, and back to the pool">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path class="arrowhead" d="M0 0L10 5L0 10z"/>
+      </marker>
+    </defs>
+    <g class="edge">
+      <path d="M184 84H208" marker-end="url(#arrow)"/>
+      <path d="M368 84H392" marker-end="url(#arrow)"/>
+      <path d="M552 84H576" marker-end="url(#arrow)"/>
+      <path d="M656 120V184" marker-end="url(#arrow)"/>
+      <path d="M576 220H552" marker-end="url(#arrow)"/>
+      <path d="M392 220H368" marker-end="url(#arrow)"/>
+      <path d="M208 220H184" marker-end="url(#arrow)"/>
+      <path d="M104 184V120" marker-end="url(#arrow)"/>
+      <path d="M288 120V184" stroke-dasharray="4 4" marker-end="url(#arrow)"/>
+    </g>
+    <text class="note" x="298" y="156">depth, heading, rates</text>
+    <rect class="box" x="24" y="48" width="160" height="72" rx="8"/>
+    <text class="name" x="104" y="72" text-anchor="middle">Pool and sub</text>
+    <text class="sub" x="104" y="88" text-anchor="middle">physics, 1/60 s steps</text>
+    <text class="sub" x="104" y="104" text-anchor="middle">simulated in training</text>
+    <rect class="box" x="208" y="48" width="160" height="72" rx="8"/>
+    <text class="name" x="288" y="72" text-anchor="middle">Sensors</text>
+    <text class="sub" x="288" y="88" text-anchor="middle">camera, pressure,</text>
+    <text class="sub" x="288" y="104" text-anchor="middle">IMU + magnetometer</text>
+    <rect class="box" x="392" y="48" width="160" height="72" rx="8"/>
+    <text class="name" x="472" y="72" text-anchor="middle">Detection</text>
+    <text class="sub" x="472" y="88" text-anchor="middle">colored boxes from</text>
+    <text class="sub" x="472" y="104" text-anchor="middle">OpenCV or simulated</text>
+    <rect class="box" x="576" y="48" width="160" height="72" rx="8"/>
+    <text class="name" x="656" y="72" text-anchor="middle">Perception</text>
+    <text class="sub" x="656" y="88" text-anchor="middle">bearing, range,</text>
+    <text class="sub" x="656" y="104" text-anchor="middle">gate angle, offset</text>
+    <rect class="box" x="576" y="184" width="160" height="72" rx="8"/>
+    <text class="name" x="656" y="208" text-anchor="middle">Observation</text>
+    <text class="sub" x="656" y="224" text-anchor="middle">27 values × 4 frames</text>
+    <text class="sub" x="656" y="240" text-anchor="middle">(33 × 4 for the orbit)</text>
+    <rect class="box main" x="392" y="184" width="160" height="72" rx="8"/>
+    <text class="name" x="472" y="208" text-anchor="middle">Policy (actor)</text>
+    <text class="sub" x="472" y="224" text-anchor="middle">neural network, 10 Hz</text>
+    <text class="sub" x="472" y="240" text-anchor="middle">turn, depth, thrust</text>
+    <rect class="box" x="208" y="184" width="160" height="72" rx="8"/>
+    <text class="name" x="288" y="208" text-anchor="middle">Controller</text>
+    <text class="sub" x="288" y="224" text-anchor="middle">PID, rate limits,</text>
+    <text class="sub" x="288" y="240" text-anchor="middle">mixer, 60 Hz</text>
+    <rect class="box" x="24" y="184" width="160" height="72" rx="8"/>
+    <text class="name" x="104" y="208" text-anchor="middle">Thrusters</text>
+    <text class="sub" x="104" y="224" text-anchor="middle">six, 0.5 s ramp,</text>
+    <text class="sub" x="104" y="240" text-anchor="middle">same forward and back</text>
+  </svg>
+  <figcaption>The control loop. The policy chooses targets at 10 Hz; the controller flies them at 60 Hz.</figcaption>
+</figure>
+<p>Everything feeding the policy comes from the real sensors, so the same loop can run on the sub. The depth, heading and rate readings also go straight to the controller, which needs them every step.</p>
+<h3>Two ways to fly the course</h3>
+<ul>
+  <li><strong>The scripted mission</strong> (<code>main.py</code>, <code>ai/</code>) is a hand-written sequence of tasks: dive, align with the gate, drive through, approach and circle the marker, return, surface. It is the baseline the learned mission is measured against.</li>
+  <li><strong>The learned mission</strong> (<code>mission.py</code>) runs a gate policy and an orbit policy in turn, each until its done detector says it's finished.</li>
+</ul>
+<p>Both share the same physics, sensors, detection, perception and control code, so comparisons are fair.</p>
+<h3>Training versus flying</h3>
+<p>In training nothing is drawn. A simulated detector computes the boxes the camera would see straight from the sub's position, then adds realistic noise. With 16 simulators in parallel, training runs about 2,900 decisions a second, about 290 times real time.</p>
+
+<h2 id="simulator">The simulator</h2>
+<p>The simulator (<code>sim_core.py</code>) advances the pool, the course and the sub in fixed 1/60 s steps, with no graphics. Training, scoring and the pygame window all drive this same core, so they share identical physics.</p>
+<h3>The pool and course</h3>
+<p>The pool is 40 m long (x), 15 m wide (y) and 2.1 m deep (z, positive down). The gate stands at x = 10 m and the marker at x = 20 m.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Object</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td>Gate</td><td>Two red 1" PVC poles (33.4 mm across), 2 m apart, from a gray top bar 1 m below the surface to the floor. The opening is below the bar.</td></tr>
+    <tr><td>Marker</td><td>A green pole 0.3 m across, from the floor to 0.6 m above the surface.</td></tr>
+    <tr><td>Mission start</td><td>3 m in front of the gate, at the surface.</td></tr>
+  </tbody>
+</table></div>
+<h3>The sub</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>Property</th><th>Value</th><th>Source</th></tr></thead>
+  <tbody>
+    <tr><td>Footprint</td><td>0.46 × 0.457 m</td><td>measured</td></tr>
+    <tr><td>Height</td><td>0.25 m</td><td>measured</td></tr>
+    <tr><td>Mass</td><td>4.0 kg, about 1 N buoyant</td><td>assumed</td></tr>
+    <tr><td>Thrusters</td><td>4 horizontal at the corners, angled 45°; 2 vertical, one on each side (depth only; they can't control pitch)</td><td>measured</td></tr>
+    <tr><td>Thruster lever arm</td><td>0.229 m (9")</td><td>measured</td></tr>
+    <tr><td>Thrust</td><td>3.56 N (0.8 lbf) each, the same forward and reverse</td><td>measured</td></tr>
+    <tr><td>Thruster ramp</td><td>0.5 s from zero to full and back, set by the sub's software</td><td>measured</td></tr>
+    <tr><td>Yaw / pitch inertia</td><td>0.13 / 0.09 kg·m²</td><td>estimated from the layout: ¾" PVC frame, 4"×9" electronics tube, 4"×6"×4" battery box on top</td></tr>
+    <tr><td>Drag</td><td>quadratic: 60 forward, 70 sideways, 80 vertical (N per (m/s)²); 1.4 in yaw and pitch</td><td>estimated from the frame's parts (tubes, ducts, boxes); the sub is blunt every way</td></tr>
+    <tr><td>Pitch</td><td>passive: weight below buoyancy rights it (2 N·m per radian)</td><td>observed: it drives flat</td></tr>
+    <tr><td>Resulting speeds</td><td>about 0.34 m/s forward, 0.32 m/s sideways, 0.3 m/s up or down, 87°/s turning; stops within about 0.25 m</td><td>from the above</td></tr>
+  </tbody>
+</table></div>
+<p>There is no thruster dead zone. Battery sag is not modeled, since a run is short compared with battery life.</p>
+<h3>Physics</h3>
+<p>Each step sums thrust, quadratic drag per axis (forward, sideways, vertical, yaw, pitch) and net buoyancy, then integrates velocity and position in world coordinates. Each thruster follows its command at no more than 2.0 per second, matching the sub's 0.5 s ramp. Pitch has no thruster acting on it, only the righting moment and drag.</p>
+<p>The first version of these numbers came from an older simulator built for a streamlined hull: 0.8 N of thrust and forward drag about a fifth of sideways drag. That sub coasted a long way toward and away from the marker, and the policies learned habits to fight it (pushing toward the marker to hold the circle) that pushed the real sub into it. With the measured thrust and the frame's real drag, the sub barely coasts.</p>
+<h3>Collisions and gate passes</h3>
+<p>The sub is a box turned to its heading; poles and the top bar are segments with a radius. On contact the sub returns to its last clear position and stops; repeated bumps within 0.5 s count as one collision. Every crossing of the gate's plane is recorded with its direction and whether it was inside the opening.</p>
+<h3>Varied dynamics</h3>
+<p>In training, each run scales the sub's numbers by random factors, because the PID gains will be retuned in the pool and the rest are estimates.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Quantity</th><th>Range</th></tr></thead>
+  <tbody>
+    <tr><td>Each PID gain</td><td>×0.7 to ×1.3</td></tr>
+    <tr><td>Yaw and pitch inertia</td><td>×0.7 to ×1.3</td></tr>
+    <tr><td>Each drag coefficient</td><td>×0.8 to ×1.2</td></tr>
+    <tr><td>Thrust</td><td>×0.9 to ×1.1</td></tr>
+  </tbody>
+</table></div>
+<p>Scored tests use the nominal values unless asked to vary them.</p>
+
+<h2 id="sensing">Sensing</h2>
+<p>The sub has a forward camera, a pressure sensor and an IMU with a magnetometer; nothing measures its horizontal speed or position. The simulator reports what each real sensor would, with realistic errors.</p>
+<h3>Sensors (<code>sensor_model.py</code>)</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>Sensor</th><th>Simulated as</th></tr></thead>
+  <tbody>
+    <tr><td>Pressure → depth</td><td>true depth + 3 mm noise + a zero error of up to ±2 cm per run</td></tr>
+    <tr><td>Depth rate</td><td>an alpha-beta filter on the noisy depth (follows a change in speed in about 0.3 s)</td></tr>
+    <tr><td>Magnetometer → heading</td><td>true heading + 0.5° noise + an offset of up to ±15° per run (steel in the pool)</td></tr>
+    <tr><td>IMU → pitch, rates, acceleration</td><td>true values + small noise; gyro bias up to ±0.005 rad/s per run</td></tr>
+  </tbody>
+</table></div>
+<p>The per-run errors are drawn fresh at every reset, so no policy can come to rely on one calibration.</p>
+<h3>Camera and detection</h3>
+<p>The camera is 1280×960 with a 70° horizontal field of view. Detections come in one of two ways:</p>
+<ul>
+  <li><strong>Render and run OpenCV</strong>, as the real sub does. The window draws each pole at its real size, then HSV color thresholding finds the boxes. This runs at about 20 frames per second.</li>
+  <li><strong>The simulated detector</strong> (<code>detector_model.py</code>), used for training. It projects the same pole geometry and returns the boxes OpenCV would find, in the same format, without drawing anything.</li>
+</ul>
+<p>A check over a whole mission (<code>tools/check_detector.py</code>) shows the two agree to within 1–2 pixels.</p>
+<h3>Detector noise</h3>
+<p>Each run draws its own noise levels:</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Effect</th><th>Range</th></tr></thead>
+  <tbody>
+    <tr><td>Box position</td><td>center shifts by a few pixels</td></tr>
+    <tr><td>Box size</td><td>scaled by 2–10% (thin, distant poles stay thin but don't vanish)</td></tr>
+    <tr><td>Dropouts</td><td>an object goes missing for about 0.3 s at a time, up to 0.5 times a second</td></tr>
+    <tr><td>Range</td><td>reliable within 25–35 m, impossible beyond 35–50 m (the pool is very clear)</td></tr>
+    <tr><td>False positives</td><td>one-frame phantom boxes of either color, up to 0.5 a second</td></tr>
+    <tr><td>Latency</td><td>30–150 ms</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="perception">Perception and the observation</h2>
+<p>Perception turns camera boxes into bearings, ranges and the gate's geometry; the observation packs those, plus the sub's own state, into 108 numbers for the gate policy and 132 for the orbit. Both run on the Pi unchanged (numpy and the standard library only).</p>
+<h3>From boxes to geometry (<code>perception.py</code>)</h3>
+<ul>
+  <li><strong>Bearing:</strong> from the box's horizontal position and the field of view; positive is to the left.</li>
+  <li><strong>Range to a pole:</strong> the best of three methods. The pole's foot in view gives range from the angle down to it, using the known pool and sub depths (within 0.3% on clean boxes), but only when the camera is at least 0.4 m above the foot: closer, the depth sensor's own zero error is a large share of the drop, and a sub flying 0.2 m off the floor got gate offsets 2–3 m wrong. Both ends in view gives range from the known length. Otherwise the apparent width is used, which is noisy for thin poles.</li>
+  <li><strong>Gate pairing:</strong> <code>find_gate_pair()</code> picks the two tall red boxes that look like a pair; the scripted mission and the policies share it.</li>
+  <li><strong>Gate geometry:</strong> from the two poles' positions, the gate's center, the turn needed to face straight through, and the sub's distance from the center line. The angle rests on a small difference of two ranges, so it is smoothed over about 1 s.</li>
+</ul>
+<h3>The 27 numbers per frame (<code>observation.py</code>)</h3>
+<p>The policy sees the current frame and the three before it, so it can sense motion from how values change. Each value is scaled to roughly −1…+1.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Group</th><th>Values</th></tr></thead>
+  <tbody>
+    <tr><td>The sub (7)</td><td>depth, depth rate, sin and cos of heading relative to the start, pitch, pitch rate, yaw rate</td></tr>
+    <tr><td>Left pole (5)</td><td>found now, bearing, range, range confidence, seconds since last seen</td></tr>
+    <tr><td>Right pole (5)</td><td>the same five</td></tr>
+    <tr><td>Gate (7)</td><td>the same five, plus the turn to face straight through and the offset from the center line</td></tr>
+    <tr><td>Last action (3)</td><td>the previous turn, depth and surge commands</td></tr>
+  </tbody>
+</table></div>
+<p>The orbit's frame adds the green marker (the same five) and a fourth last-action value for sway: 33 per frame, 132 in all.</p>
+<h3>Memory and identity</h3>
+<p>When something drops out of view, its last values are kept, with "found" at 0 and the time since seen counting up. Bearings are corrected for how far the sub has turned since, but not for how far it has moved.</p>
+<p>Close to the gate only one pole fits in view, so a lone pole is labeled by whichever pole was last seen nearest to it. With no memory yet, a pole near the left edge is taken as the right pole, its partner being beyond that edge. The label is right 100% of the time with the perfect detector and 91% with noise.</p>
+<p>The gate, likewise, counts as found only once a pair of poles has been seen 3 frames in a row; until then the boxes are treated as lone poles. A one-frame phantom red box paired with a real pole had produced gate offsets 2–3 m wrong, and the gate policy steered into the pole: on the real (slower) physics the sub spends seconds near the gate with one pole in view, so this caused most of its collisions.</p>
+<p>The marker track only accepts a sighting once it has been seen 3 frames in a row. The detector's one-frame false positives then can't move the remembered marker. In one test run, a single phantom green box made the orbit think the marker was dead ahead just as it finished; it went searching and backed into the real marker.</p>
+<p>Heading is measured from the start of the run, not from north, so a policy can't memorize the gate's compass direction.</p>
+<h3>A real example</h3>
+<p>Three seconds into a gate run, the observation's estimates sat close to the truth:</p>
+<div class="table-wrap"><table>
+  <thead><tr><th></th><th class="num">Policy sees</th><th class="num">Truth</th></tr></thead>
+  <tbody>
+    <tr><td>Distance to the gate</td><td class="num">4.62 m</td><td class="num">4.65 m</td></tr>
+    <tr><td>Offset from the center line</td><td class="num">1.02 m left</td><td class="num">1.06 m left</td></tr>
+    <tr><td>Depth</td><td class="num">0.72 m</td><td class="num">0.70 m</td></tr>
+  </tbody>
+</table></div>
+<p>The two poles' bearings (+11.6° and −11.4°) put the gate almost dead ahead (−0.45°). The positive offset told the policy to drift right, and its last action was a slight right turn.</p>
+<p>Before reaching the network, each value is normalized: the training average is subtracted and the result divided by the training spread, then clipped to ±10. These statistics are saved with each trained policy.</p>
+
+<h2 id="control">Low-level control</h2>
+<p>The sub's own control loops (<code>controller.py</code>) turn the policy's targets into thruster commands 60 times a second. The scripted mission and both policies share this code, and it is written to run on the Pi unchanged.</p>
+<h3>The loops</h3>
+<ul>
+  <li><strong>Depth:</strong> PID on measured depth (P 9, I 0.1, D 3), with the derivative taken from the filtered depth rate. A 0.5 m change settles in about 4.4 s with about 3 cm overshoot. Both vertical thrusters push together.</li>
+  <li><strong>Pitch:</strong> not controlled. The vertical thrusters are on the sides, and the sub is stable in pitch on its own.</li>
+  <li><strong>Heading:</strong> PD toward the target heading, using the gyro for the derivative.</li>
+  <li><strong>Mixer:</strong> turns forward, sideways, yaw and heave efforts into the six thruster commands.</li>
+</ul>
+<h3>Safeguards, and the problem each one fixed</h3>
+<p>Each of these was added after a failure that looked at first like a policy problem.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Safeguard</th><th>Problem it fixed</th></tr></thead>
+  <tbody>
+    <tr><td>Horizontal and vertical thrusters scale down separately when a command exceeds 1</td><td>Scaling all six together let hard maneuvering steal vertical thrust, and the buoyant sub floated to the surface. Every early orbit policy flew its loop on the surface.</td></tr>
+    <tr><td>Depth gains P 9, I 0.1, D 3 (were 2.5, 0.4, 5.0)</td><td>Retuned by step tests for the measured thrust and drag. The old gains took 18 s to settle a 0.5 m change and overshot 19 cm: the integral wound up during the slow vertical transit.</td></tr>
+    <tr><td>Depth target moves at most 0.5 m/s</td><td>The orbit policy flipped its depth command between 1.2 and 1.9 m step to step, which set the pitch swinging and surfaced the sub in 18% of varied runs.</td></tr>
+    <tr><td>Heading target moves at most 30°/s</td><td>The policies steered near bang-bang, about ±27–31° every 0.1 s, so the sub wagged at 25–33°/s. With the limit it turns at 10–12°/s and runs got faster.</td></tr>
+    <tr><td>Gate and orbit aim between 1.2 and 1.65 m deep</td><td>Above: both policies sometimes rose and surfaced, and the opening is below 1.15 m. Below: a gate policy drifted to the deepest target allowed (1.9 m, 0.2 m off the floor), where it can't range the poles; once its depth output was pinned at the limit, training gave no signal to bring it back.</td></tr>
+  </tbody>
+</table></div>
+<p>The heading gains are the scripted sub's tuned values. All of them will be retuned in the pool, which is why training varies them by ±30%.</p>
+
+<h2 id="networks">The neural networks</h2>
+<p>Each skill has two small networks, an actor and a critic, each with two hidden layers of 128 neurons. Only the actors would run on the sub: about 65,000 numbers for both skills, a few microseconds a decision on a Pi.</p>
+<h3>The actor (the policy)</h3>
+<pre><code>observation (108) → 128 → tanh → 128 → tanh → action means (3)</code></pre>
+<p>Each layer is a matrix multiply plus a bias; tanh squashes each neuron into −1…+1, which lets the network express curved, non-linear rules. Beside the network sit a few learned numbers, one exploration spread per action, that don't depend on the observation.</p>
+<p>In training, each action is sampled from a bell curve around its mean with that spread; that randomness is how the policy tries variations. When flying for real, the actor uses the mean, clipped to ±1.</p>
+<h3>The critic (the value estimate)</h3>
+<pre><code>observation (108) → 128 → tanh → 128 → tanh → one number</code></pre>
+<p>The number is its estimate of the reward still to come from this situation. The critic never flies the sub; it is the yardstick training uses to judge each action.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th></th><th class="num">Inputs</th><th>Actor outputs</th><th class="num">Actor parameters</th><th class="num">Critic parameters</th></tr></thead>
+  <tbody>
+    <tr><td>Gate</td><td class="num">108</td><td>3: turn, depth, surge</td><td class="num">30,854</td><td class="num">30,593</td></tr>
+    <tr><td>Orbit</td><td class="num">132</td><td>4: turn, depth, surge, sway</td><td class="num">34,056</td><td class="num">33,665</td></tr>
+  </tbody>
+</table></div>
+<h3>What an action becomes</h3>
+<p>The outputs are not thruster commands but targets for the control loops:</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Output</th><th>Meaning</th><th>Carried out by</th></tr></thead>
+  <tbody>
+    <tr><td>Turn</td><td>up to ±45° from the current heading</td><td>heading loop, target moving ≤ 30°/s</td></tr>
+    <tr><td>Depth</td><td>a target from 0.3 to 1.9 m (never above 1.2 m for these skills)</td><td>depth loop, target moving ≤ 0.5 m/s</td></tr>
+    <tr><td>Surge</td><td>forward or back thrust</td><td>open loop (nothing measures speed)</td></tr>
+    <tr><td>Sway (orbit)</td><td>sideways thrust, positive left</td><td>open loop</td></tr>
+  </tbody>
+</table></div>
+<h3>One decision, traced</h3>
+<p>At the moment shown in the observation example, the gate actor output turn −0.54, depth +0.78 and surge +3.30. The surge mean far past +1 means the policy was certain it wanted full thrust; it was clipped to +1.</p>
+<p>Those became: turn 24° right, a 1.72 m depth target, full ahead. After one 0.1 s step the controller was holding a heading 3.7° further right and a 1.57 m target, limited by the rate caps. The thrusters ran right side at full and left side at 0.42 (full ahead while turning right), with both verticals near full to dive.</p>
+<p>The critic rated that moment 6.2, a high value meaning it expected the progress reward and the gate bonus to come.</p>
+
+<h2 id="training">How training works</h2>
+<p>Training (<code>train.py</code>) uses PPO from Stable-Baselines3: fly the current policy to collect experience, judge each action against the critic's expectation, nudge both networks, and repeat. A gate skill reaches near 100% in a few minutes; the orbit takes 20–40.</p>
+<h3>One training cycle</h3>
+<ol>
+  <li><strong>Collect.</strong> The policy, with exploration, flies 16 simulators for 512 decisions each: 8,192 steps, about 14 minutes of simulated swimming. Each step records the observation, the action, how likely the actor was to choose it, the critic's estimate, and the reward.</li>
+  <li><strong>Score.</strong> Each step gets an <em>advantage</em>: how much better or worse things went than the critic expected, counting the next several steps too.</li>
+  <li><strong>Update.</strong> Both networks are nudged, about 320 small steps over 10 passes in chunks of 256, stopping early if the policy has changed enough.</li>
+</ol>
+<p>A 2-million-step run is about 250 such cycles.</p>
+<h3>The advantage</h3>
+<p>The surprise at step <em>t</em> is the reward plus the critic's discounted estimate of the next state, minus its estimate of this one:</p>
+<div class="eq">δ<sub>t</sub> <span>=</span> r<sub>t</sub> <span>+</span> γ V(s<sub>t+1</sub>) <span>−</span> V(s<sub>t</sub>)</div>
+<p>The advantage adds up the surprises that follow, each discounted further (γ = 0.995, λ = 0.95):</p>
+<div class="eq">A<sub>t</sub> <span>=</span> δ<sub>t</sub> <span>+</span> γλ δ<sub>t+1</sub> <span>+</span> (γλ)<sup>2</sup> δ<sub>t+2</sub> <span>+ …</span></div>
+<p>Advantages are then normalized across the batch, so roughly half are positive and half negative.</p>
+<h3>The loss</h3>
+<p>One number is made smaller, from three parts:</p>
+<ul>
+  <li><strong>Policy:</strong> for each step, the ratio of the action's new to old probability, times its advantage. Pushing it up makes better-than-expected actions more likely. PPO counts the ratio only between 0.8 and 1.2, so no single action moves more than about 20% per cycle.</li>
+  <li><strong>Value:</strong> the squared error between the critic's estimate and its target (estimate plus advantage).</li>
+  <li><strong>Entropy:</strong> a small bonus (×0.005) for keeping some randomness, so exploration doesn't collapse early.</li>
+</ul>
+<p>Backpropagation then gives, for every weight in both networks, the direction that lowers the loss, and the Adam optimizer moves each weight a small step that way.</p>
+<h3>One update, with real numbers</h3>
+<p>A miniature cycle on the trained gate policy, 64 steps in one simulator, followed step 20:</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Quantity</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Action sampled</td><td>turn +1.00, depth +1.05, surge +3.04 (an exploratory hard left)</td></tr>
+    <tr><td>Critic: this state, next state</td><td>6.081, 6.098</td></tr>
+    <tr><td>Reward (normalized)</td><td>+0.023</td></tr>
+    <tr><td>Surprise</td><td>+0.009 (slightly better than expected)</td></tr>
+    <tr><td>Advantage</td><td>+0.18, or +0.09 after normalizing</td></tr>
+    <tr><td>Critic's target</td><td>6.265</td></tr>
+  </tbody>
+</table></div>
+<p>After one update on those 64 steps, 61,446 of the 61,447 weights moved. Step 20's action became 1.75× more likely, and the critic's estimate for it went from 6.08 to 6.60.</p>
+<p>That single update is bigger than real training's: on only 64 steps, the critic even overshot its target. Real training takes many smaller steps on 256-step chunks; the 20% limit and an early stop (<code>target_kl</code> 0.03) keep each cycle's change small.</p>
+<h3>Settings</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>Setting</th><th>Value</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Parallel simulators</td><td>16</td><td>about 15% faster than 8; the bottleneck is the main process's round trips to the workers</td></tr>
+    <tr><td>Steps per update</td><td>8,192</td><td>enough complete episodes per cycle for a steady estimate</td></tr>
+    <tr><td>Chunk size / passes</td><td>256 / 10</td><td>Stable-Baselines3's usual balance of speed and stability</td></tr>
+    <tr><td>Discount γ</td><td>0.995</td><td>looks about 20 s ahead</td></tr>
+    <tr><td>Learning rate</td><td>3×10⁻⁴ falling to 0 (1×10⁻⁴ for fine-tuning)</td><td>gentle late updates</td></tr>
+    <tr><td><code>target_kl</code></td><td>0.03</td><td>stops a cycle once the policy has moved enough</td></tr>
+    <tr><td>Normalization</td><td>observations and rewards</td><td>saved with every checkpoint</td></tr>
+    <tr><td>Varied dynamics</td><td><code>--randomize</code></td><td>see the simulator section</td></tr>
+    <tr><td>Fine-tuning</td><td><code>--resume</code></td><td>adapting to a change is much faster than starting over</td></tr>
+  </tbody>
+</table></div>
+<h3>Watching it learn</h3>
+<p>TensorBoard shows each run. The headline curve is <code>eval/success_rate</code>: every 100,000 steps the current policy flies 30 fixed test starts (never used in training) without exploration, plotted beside the scripted baseline. <code>train/approx_kl</code> should stay near 0.01–0.03, and <code>train/std</code>, the exploration spread, should fall gradually.</p>
+<p><code>watch.py</code> flies any saved checkpoint in the pygame window, even while training runs.</p>
+
+<h2 id="skills">The skills</h2>
+<p>Each skill is a Gymnasium environment (<code>gate_env.py</code>, <code>orbit_env.py</code>) built on a shared base (<code>sub_env.py</code>): it places the sub, runs the control loop, decides how an episode ends, and pays reward. The reward uses ground truth, which is fine: it is only used in training and never reaches the sub. The exact weights, and why each has its value, are in the next section.</p>
+<h3>Every skill shares</h3>
+<ul>
+  <li><strong>Ending:</strong> a collision, or surfacing after having dived below 0.3 m (as surfacing ends a RoboSub run), or a time limit.</li>
+  <li><strong>Reward each step:</strong> for progress toward the skill's goal, minus small costs for time and energy.</li>
+  <li><strong>Ending reward:</strong> a large bonus for success; the same penalty for any failure, timing out included, so hovering safely never beats trying.</li>
+</ul>
+<h3>Gate</h3>
+<p>The sub starts in front of the gate and must pass forward through the opening, then carry on 1.5 m beyond it, within 60 s. Carrying on teaches it to keep going straight after the pass instead of turning back, so the orbit starts clear of the gate's frame.</p>
+<ul>
+  <li><strong>Starts:</strong> 3–11 m out, up to ±3.5 m off center, ±30° off square, 0.1–1.9 m deep. The wide range lets one policy handle the forward pass and the return.</li>
+  <li><strong>Search starts</strong> (<code>--search-starts</code>): a share of episodes turned a further 40–110° away, so the gate starts out of view and has to be found. Without them the policy had never practiced searching. Turned away, the gate policy got through only 47 of 60 times going forward and 31 of 60 on the return.</li>
+  <li><strong>Progress:</strong> closer to the gate's center, the error from 1.5 m depth, and half the distance from the center line, so a square, centered approach pays best.</li>
+  <li><strong>Failure:</strong> crossing the gate line outside the opening, or crossing back after passing.</li>
+  <li><strong>Recorded starts:</strong> 30% of training episodes start where the mission actually hands over the return, moving at about 0.75 m/s.</li>
+</ul>
+<h3>Orbit</h3>
+<p>The sub starts 1–5 m past the gate and must go around the marker on either side, then face back toward the gate, within 120 s.</p>
+<ul>
+  <li><strong>Sway</strong> is a fourth action. The only camera faces forward (±35°), so to keep the marker in view the sub faces it and slides sideways around it, as the scripted orbit does.</li>
+  <li><strong>Success</strong> needs both a truth check (at least 270° swept around the marker) and a measurable handoff (the gate in view, the heading turned about 180°).</li>
+  <li><strong>Safety margin:</strong> 1.5 m from the marker's center; contact is at about 0.38 m. Training uses the "near" rule (<code>--margin-rule near</code>): each step inside costs reward, and only coming within 1.0 m ends the episode. Scoring follows the real-world rule: only a collision fails. (Ending episodes at 1.5 m, the earlier "hard" rule, stopped almost every training episode a third of the way around on the real physics.)</li>
+  <li><strong>Progress:</strong> degrees swept around the marker, then facing the gate (phased in after 180°), at 1.5 m depth.</li>
+  <li><strong>Costs each step:</strong> for the marker sitting off the camera's center (full cost when out of view), and, once the sub has joined the loop, for being off a 2 m ring around the marker, in or out.</li>
+  <li><strong>Practice starts:</strong> a third of training episodes begin 150–300° around the marker, so the last step (stop facing the marker, turn to the gate) gets plenty of practice.</li>
+  <li><strong>Recorded starts:</strong> 40% begin where the mission actually hands over the orbit, again moving at about 0.75 m/s.</li>
+</ul>
+<h3>Return</h3>
+<p><code>GateReturnEnv</code> scores the gate policy on the way back: starts 8–11 m past the gate, up to 3.5 m off center, 1.1–1.9 m deep, success going back through the opening and 1.5 m beyond.</p>
+
+<h2 id="rewards">Reward weights</h2>
+<p>The reward is the only way to tell a policy what matters. Every weight below either encourages a behavior or closes a loophole a policy found. Most were set after watching a policy do something unwanted. They live in <code>RewardConfig</code> (<code>gate_env.py</code>), <code>OrbitRewardConfig</code> (<code>orbit_env.py</code>) and the shared base (<code>sub_env.py</code>).</p>
+<h3>How the pieces fit</h3>
+<ul>
+  <li><strong>Progress is a change in a score, not a payment per step.</strong> Each skill defines a <em>potential</em>, a ground-truth score of how good the current position is. Each step pays its change. The total depends only on where an episode starts and ends, so a policy can't farm reward by swimming back and forth.</li>
+  <li><strong>Only relative sizes matter.</strong> Training rescales rewards by their running spread (<code>VecNormalize</code>), so what counts is how the terms compare: +20 for the job against about 0.01 per step for time.</li>
+  <li><strong>Costs each step add up.</strong> 0.04 per step is 4 points over a 10 s stretch, comparable to the penalty for failing. Per-step costs are kept small so they shape <em>how</em> the job is done without making "end the episode early" attractive.</li>
+</ul>
+<h3>Every skill</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>Term</th><th class="num">Weight</th><th>What it does</th><th>Why this value</th></tr></thead>
+  <tbody>
+    <tr><td>Time</td><td class="num">−0.01 / step</td><td>A little cost for every 0.1 s</td><td>Enough to prefer the quicker of two good routes, too small to ever outweigh doing the job safely.</td></tr>
+    <tr><td>Energy</td><td class="num">−0.05 / s at full</td><td>Charged for thrust used, averaged over all six thrusters</td><td>Discourages fighting itself (full forward and reverse at once) and wasted thrust. At most 0.5 over a 10 s gate run, even with every thruster at full the whole time.</td></tr>
+    <tr><td>Surfacing</td><td class="num">−5</td><td>Ends the episode</td><td>Surfacing ends a real RoboSub run, so it's a failure like any other.</td></tr>
+    <tr><td>Timeout</td><td class="num">−5</td><td>Ends the episode at the time limit</td><td>Before this, timing out cost nothing. One gate policy learned to hover near the gate safely until time ran out. Charging the same as any failure removed that option.</td></tr>
+  </tbody>
+</table></div>
+<h3>Gate</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>Term</th><th class="num">Weight</th><th>What it does</th><th>Why this value</th></tr></thead>
+  <tbody>
+    <tr><td>Progress to the gate</td><td class="num">1.0 / m</td><td>Pays for getting closer to the gate's center</td><td>The main guide. A typical start is 3–11 m out, so it's worth 3–11 in all.</td></tr>
+    <tr><td>Depth error</td><td class="num">1.0 / m</td><td>Counts distance from 1.5 m deep as distance from the gate</td><td>1.5 m is the middle of the usable opening (below the bar at 1.15 m, above the floor). Weighted like horizontal distance, so diving and closing in count equally.</td></tr>
+    <tr><td>Off the center line</td><td class="num">0.5 / m</td><td>Counts sideways distance from the gate's center line</td><td>Rewards lining up square before arriving, which keeps the sub off the poles. Half weight so it guides the approach without making the policy creep sideways first. Adjustable with <code>--center-line-weight</code>.</td></tr>
+    <tr><td>Through the gate</td><td class="num">+20</td><td>Paid at the pass, forward through the opening</td><td>Larger than all the progress in an episode combined, so getting through always beats any shaping trick. Raised together with the timeout penalty; gate success went from unstable to 97–100% on two seeds.</td></tr>
+    <tr><td>Carrying on</td><td class="num">1.0 / m</td><td>After the pass, pays for distance beyond the gate, up to 1.5 m</td><td>Keeps the progress measure pointing forward once the gate is behind.</td></tr>
+    <tr><td>Clear of the gate</td><td class="num">+5</td><td>Success: 1.5 m beyond the gate</td><td>Smaller than the pass bonus, because the hard part is done; enough that turning back (−5) is clearly worse than carrying on. Paying everything at the crossing had left the policy untrained just past it, and it turned back.</td></tr>
+    <tr><td>Collision</td><td class="num">−5</td><td>Hitting a pole or the bar</td><td>A failure, like the others.</td></tr>
+    <tr><td>Missed gate</td><td class="num">−5</td><td>Crossing the gate line outside the opening, the wrong way, or back again after passing</td><td>Same as any failure, so sneaking around a pole is never a shortcut.</td></tr>
+  </tbody>
+</table></div>
+<h3>Orbit</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>Term</th><th class="num">Weight</th><th>What it does</th><th>Why this value</th></tr></thead>
+  <tbody>
+    <tr><td>Sweep</td><td class="num">2.0 / rad</td><td>Pays for angle swept around the marker, up to 270°, counted from the moment the sub first joins the ring</td><td>The main guide: about 9.4 for a full loop, in either direction. Measured as angle around the marker, so swinging wide gains nothing. Counted from the start, the policy went around while still closing in and reached the ring about 115° around, 3–4 m out at 90°; counted from joining, it drives in first and joins at about 84°. (Counting it only while within 2.5 m also brought it in sooner, but then being close was the only way to earn it, and the policy hugged the marker.)</td></tr>
+    <tr><td>Face the gate</td><td class="num">4.0</td><td>Pays for heading toward the gate, phased in from 180° to 270° swept</td><td>The loop's last step: stop facing the marker and turn to the gate. Phased in so it doesn't pull the sub around early. Raised from 2 to 4 with practice starts, when the orbit wasn't learning that step.</td></tr>
+    <tr><td>Depth error</td><td class="num">1.0 / m</td><td>Counts distance from 1.5 m deep against progress</td><td>Keeps the loop at the depth the return needs.</td></tr>
+    <tr><td>Too far (progress)</td><td class="num">1.0 / m</td><td>Counts distance beyond 2 m from the marker against progress</td><td>Draws the sub in. On its own it didn't stop swing-outs: as a change in score, it paid back on the way in what it charged on the way out.</td></tr>
+    <tr><td>Off the ring (each step)</td><td class="num">−0.15 / m / step</td><td>Charged every step for each meter off a 2 m ring, in or out, once the sub has come within 2.25 m</td><td>A cost per step can't be paid back, so it stops swing-outs. Two-sided because the sweep reward pays per degree, and a smaller circle sweeps degrees faster: without the inner side, policies hugged the margin. Not on the approach: charged from the start (5–9 m out), it made ending the episode at the margin (−5) cheaper than flying in, and 93–98% of training episodes ended that way. Once on the ring the loop holds 1.7–2.0 m.</td></tr>
+    <tr><td>Sliding on the approach</td><td class="num">−0.03 / step</td><td>Charged for sideways thrust (scaled by how much) until the sub joins the ring</td><td>On the way in the policy slid sideways at full sway, curving and slowing its approach. The charge only worked once the policy's sway output, pinned far past its limit, was scaled back into range (see the lesson on clipped outputs).</td></tr>
+    <tr><td>Marker off center</td><td class="num">−0.04 / step</td><td>Scaled by how far the marker is from the image center; full when out of view more than 0.5 s</td><td>With one forward camera, keeping the marker in view is how the sub stays safe. Without it the first orbits flew mostly blind (16–30% of the loop in view); with it, about 85–90%. The 0.5 s grace covers normal detector dropouts.</td></tr>
+    <tr><td>Inside the margin</td><td class="num">−0.1 / step, plus up to −0.5</td><td>Charged each step closer than 1.5 m, more the deeper inside</td><td>The real-world rule, used in scoring: getting close is bad but recoverable, and only contact fails.</td></tr>
+    <tr><td>Too close (training)</td><td class="num">−5</td><td>Ends the episode within 1.0 m (<code>--margin-rule near</code>)</td><td>From scratch, under only the per-step margin cost, policies never learned to go around and stuck near the marker, so training needs a hard stop somewhere. At 1.5 m (the old "hard" rule), exploration on the real physics crossed it in almost every episode; at 1.0 m, the margin cost does the teaching and the stop only catches real blunders.</td></tr>
+    <tr><td>Around and facing the gate</td><td class="num">+20</td><td>Success</td><td>As for the gate: bigger than all the shaping combined.</td></tr>
+    <tr><td>Collision</td><td class="num">−5</td><td>Hitting the marker or the gate</td><td>A failure.</td></tr>
+    <tr><td>Wrong way</td><td class="num">−5</td><td>Crossing back through the gate line during the orbit</td><td>Stops the orbit from "finishing" by heading straight back through the gate without going around.</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="runner">The mission runner and done detectors</h2>
+<p>The learned mission is not one big network, and it has no hand-written switching rules. The runner (<code>MissionRunner</code> in <code>mission.py</code>) runs one skill at a time and moves on when that skill's <em>done detector</em> says it's finished.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Phase</th><th>What flies</th><th>Moves on when</th></tr></thead>
+  <tbody>
+    <tr><td>DIVE</td><td>Controller only: hold heading, dive to 1.5 m</td><td>Measured depth past 1.3 m and steady</td></tr>
+    <tr><td>GATE</td><td>Gate policy</td><td>The gate's detector says done (trained on: through the gate and 1.5 m beyond)</td></tr>
+    <tr><td>ORBIT</td><td>Orbit policy</td><td>The orbit's detector says done (trained on: 270° around the marker and facing the gate)</td></tr>
+    <tr><td>RETURN</td><td>Gate policy again</td><td>The gate's detector says done</td></tr>
+    <tr><td>DONE</td><td>Hold position</td><td>Mission complete</td></tr>
+  </tbody>
+</table></div>
+<p>Two safeguards remain. DIVE comes first because the gate policy was trained starting underwater; started at the surface, it chased the gate while still diving. And no phase may command a depth shallower than 1.2 m, so no policy can pull the sub to the surface by mistake (surfacing ends the run).</p>
+<h3>The done detector (<code>done_detector.py</code>)</h3>
+<p>Each skill's detector is a small network (128-128, tanh, one output) that reads the same observation as the skill's policy, so it only uses what the real sub can measure. Its output is the probability that the skill's job is finished. It's numpy only, so it runs on the Pi, and it carries its own copy of the policy's observation normalization.</p>
+<ul>
+  <li><strong>Training data</strong> (<code>tools/train_done_detector.py</code>): the skill's own policy flies 800 training-style starts, with varied dynamics on every other one. Every 0.1 s step is labeled with the simulator's ground truth: is the job done now? Flights carry on 3 s past the finish so the detector also sees finished states.</li>
+  <li><strong>Training:</strong> ordinary supervised learning (binary cross-entropy, Adam), a few minutes on the CPU. On held-out flights it's right 98% of the time for the gate and 97% for the orbit.</li>
+  <li><strong>Firing:</strong> the gate's fires after 3 steps in a row above 0.5; the orbit's fires on the first step above 0.5.</li>
+</ul>
+<p>The orbit's eager setting was chosen in the full mission, not offline. Cautious settings (a higher threshold, more steps in a row) looked better on held-out flights, but in the mission they sometimes missed the brief moment of finishing, and the sub kept circling: 115 of 120. Firing a few degrees before the true finish turned out harmless, because the sub keeps sweeping around the marker as it heads back to the gate: 119 of 120.</p>
+<h3>What was tried first</h3>
+<p>Two designs came before this one.</p>
+<ul>
+  <li><strong>Hand-written rules.</strong> The first runner switched on measured cues: the gate seen within 4 m and then lost for 3 s; a 3 s straight drive (CLEAR) to get clear of the gate; and for the orbit, five conditions at once (turned 135°, heading reversed, gate in view, marker gone to the side, marker on the turning side). Each rule fixed a failure seen in a run. It reached 118 of 120, but every rule moved the learned mission closer to the scripted one.</li>
+  <li><strong>A done output on each policy, learned from reward.</strong> This failed both ways it was tried. Starting at "not done", the policies rarely tried it, flew on past the finish into states they had never trained in, and got worse. Starting undecided, the small cost of saying done too early came almost every step, while the payoff for the right moment came rarely, so they learned never to say it. The gate fell to 0%. Supervised learning has no such problem: every moment comes with the right answer.</li>
+</ul>
+
+<h2 id="results">Results</h2>
+<p>On the real physics the learned mission is a little more reliable than the scripted one and about a third faster. All scores below use the noisy detector, the thruster ramp and the measured thrust and drag. "Varied" means the dynamics were varied as in training.</p>
+<h3>Full mission, 60 fresh test starts</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th></th><th class="num">Nominal</th><th class="num">Varied</th><th class="num">Time (median)</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>Learned skills + done detectors</td><td class="num">59/60 (98%)</td><td class="num">59/60 (98%)</td><td class="num">~97 s</td></tr>
+    <tr><td>Scripted mission</td><td class="num">57/60 (95%)</td><td class="num">56/60 (93%)</td><td class="num">~151 s</td></tr>
+  </tbody>
+</table></div>
+<p>On the 10000+ starts the learned mission scored 59 of 60, the scripted one 58: 177 of 180 against 171 over the three sets. Missions take longer than on the old physics (about 55 s then) because the real sub is about a third as fast.</p>
+<h3>Each skill, 100 test starts</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>Skill</th><th class="num">Nominal</th><th class="num">Varied</th><th class="num">Time (median)</th></tr></thead>
+  <tbody>
+    <tr><td>Gate, forward (to 1.5 m beyond)</td><td class="num">100%</td><td class="num">100%</td><td class="num">23 s</td></tr>
+    <tr><td>Gate, return (to 1.5 m beyond)</td><td class="num">97%</td><td class="num">96%</td><td class="num">35 s</td></tr>
+    <tr><td>Orbit</td><td class="num">96%</td><td class="num">99%</td><td class="num">43 s</td></tr>
+  </tbody>
+</table></div>
+<p>The mission uses <code>gate_phys6_ft</code> and <code>orbit_straight_in2</code>, with a done detector beside each, retrained on the real physics from the earlier policies.</p>
+<h3>How the scores were reached</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>Step</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td>First gate policy, perfect detector</td><td>70%, then unstable</td></tr>
+    <tr><td>Separate left and right pole tracks, gate angle</td><td>no gain until training was stabilized</td></tr>
+    <tr><td>Stabilized training (<code>target_kl</code> 0.03, learning rate falling to 0)</td><td>held its gains instead of forgetting them</td></tr>
+    <tr><td>Timeout costs −5, gate bonus +20</td><td>97–100% gate on two seeds</td></tr>
+    <tr><td>Noisy detector, wide starts</td><td>one gate policy for both directions, 95–99%</td></tr>
+    <tr><td>Orbit with sway, marker-centering cost</td><td>from mostly blind (16–30% in view) to ~85–90% in view</td></tr>
+    <tr><td>Mixer fix, practice starts mid-loop</td><td>orbit 99%, submerged at the handoff</td></tr>
+    <tr><td>Mission runner, then dive-first and depth floor</td><td>learned mission 78% → ~90%</td></tr>
+    <tr><td>Thruster ramp, varied dynamics, fine-tuning</td><td>policies regained their scores under the harder simulation</td></tr>
+    <tr><td>Heading and depth rate limits</td><td>no more yaw wag or pitch-driven surfacing</td></tr>
+    <tr><td>Swing-out cost</td><td>orbit tight at 3.3 m (was 5.0 m)</td></tr>
+    <tr><td>Both skills fine-tuned from recorded mission handoffs</td><td>learned mission ~89% → 97%, no more wandering orbits</td></tr>
+    <tr><td>Marker sightings confirmed over 3 frames; gate search starts</td><td>learned mission 115 → 118 of 120; no more missed gates on the return</td></tr>
+    <tr><td>Done detectors replace the runner's rules; gate carries through</td><td>118 → 119 of 120, with no hand-written switching left</td></tr>
+    <tr><td>Real physics (measured thrust, frame drag, side vertical thrusters), retrained</td><td>first 152 of 180; then the orbit's ring cost, honest perception near the floor, confirmed gate pairs: 175 of 180 (scripted 171)</td></tr>
+    <tr><td>Orbit's sweep counted from joining the ring</td><td>joins the ring at ~84° instead of ~116°; 177 of 180</td></tr>
+    <tr><td>Orbit's pinned sideways output rescaled; approach charge</td><td>joins at ~77°; 2.4 m at 60–90°; 177 of 180</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="lessons">Lessons and design decisions</h2>
+<div class="lessons">
+<p>Most of the progress came from finding what was actually going wrong, not from training longer. These are the lessons that shaped the design.</p>
+<p><strong>Train on what the real sub can sense.</strong> The early PID loops damped sideways motion using the simulator's true velocity, which the sub cannot measure. Every loop the policies use now runs on measured values only; anything else is labeled SIM ONLY and stays out of the observation.</p>
+<p><strong>Bounding boxes are the interface.</strong> The real vision pipeline wasn't available, and almost every color detector produces boxes. The real pipeline should plug in with only its camera's field of view and resolution.</p>
+<p><strong>Draw things at their real size.</strong> The original renderer drew poles 5 pixels wide at any distance, and the scripted mission had been tuned around it. Correct drawing, and thresholds as fractions of the image, made the scripted run, OpenCV and the simulated detector agree.</p>
+<p><strong>One change at a time, on more than one seed.</strong> One round changed the observation, the reward and the training setup together, and results got worse. Testing each alone showed the cause was unstable training, which the first run had escaped by luck.</p>
+<p><strong>Make "don't try" expensive.</strong> One run learned to hover near the gate until time ran out, because timing out cost nothing. Costing it like any other failure removed that option.</p>
+<p><strong>Look at what a policy actually does.</strong> The first orbit passed the marker with 12 cm to spare, mostly blind; every early orbit flew on the surface. The scores hid both; watching runs and measuring clearance and depth showed them.</p>
+<p><strong>Check the low-level loops whenever the physics changes.</strong> The shared mixer, the pitch gain and the policies' rapid-fire commands each caused failures that first looked like policy problems. Each was fixed in the controller, without retraining.</p>
+<p><strong>Train with the hard rule, judge with the real one.</strong> From scratch, a policy facing only a cost inside the marker's margin never learned to go around. Trained with a hard stop at the margin, then scored where only a collision fails, it did best.</p>
+<p><strong>Practice the hard part, and the real starts.</strong> The orbit could not learn its last step until a third of episodes started near the end of the loop. The skills had trained from a standstill, while the mission hands them the sub moving at 0.75 m/s.</p>
+<p><strong>Handoffs need care.</strong> Most learned-mission failures came from the runner's switching cues, not the skills: switching before the sub was through the gate, missing a pass, or handing back with the marker in between. Each cue was fixed using what the sub can measure.</p>
+<p><strong>Learn "when" by supervision, not reward.</strong> Deciding when a skill is finished is a yes-or-no question with a known answer at every moment in the simulator. Learned from reward, the answer arrived too rarely and the policies learned never to say done. Learned from labels, it took minutes.</p>
+<p><strong>Judge a component where it's used.</strong> The orbit detector's offline scores favored cautious settings that failed in the mission, because offline every early firing counted as an error while in the mission most were harmless.</p>
+<p><strong>Check the physics against the real sub.</strong> Thrust 4.4× too low and a streamlined hull's drag made a sub that coasted. Policies learned to fight the coasting, and on the real numbers the same habits drove them into the marker. A photo and one measurement fixed more than many training runs.</p>
+<p><strong>When a new physics breaks things, look for the loophole.</strong> On the real physics, three reward and perception flaws surfaced that the old numbers had hidden: a cost that made crashing the cheapest ending, a reward that paid for hugging the marker, and phantom gate pairs. Each showed up as "the policy is bad" and each was found by tracing what the policy saw and what it was paid for.</p>
+<p><strong>Watch for outputs pinned past their limits.</strong> The policy's actions are clipped to ±1. When an output's typical value drifts far beyond that (the gate's depth, the orbit's sideways thrust at about 2.2), every try clips to the same action, training sees no difference to learn from, and no reward change can move it. It looks like stubbornness; reading the raw outputs shows it at once. The fix is to bring the output back in range (or cap the action so the pinned value is harmless) and train again.</p>
+<p><strong>Fix it in learning, not in the runner.</strong> Every rule added to the runner makes the learned mission more like the scripted one. When a skill misbehaves, the first choice is to change what it trains on (search starts, recorded handoffs) or what it perceives (confirmed marker sightings), not to add a special case.</p>
+</div>
+
+<h2 id="reference">Reference</h2>
+<h3>Running it</h3>
+<p>The project uses Python 3.12, because PyTorch's last Intel Mac build (2.2.2) supports nothing newer: <code>python3.12 -m venv .venv</code>, then <code>.venv/bin/pip install -r requirements.txt</code>.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Task</th><th>Command</th></tr></thead>
+  <tbody>
+    <tr><td>Scripted mission in the window</td><td><code>.venv/bin/python main.py --detector noisy</code></td></tr>
+    <tr><td>Watch the learned mission</td><td><code>.venv/bin/python watch.py mission --task mission</code></td></tr>
+    <tr><td>Watch one skill</td><td><code>.venv/bin/python watch.py &lt;model.zip&gt; --task gate</code> (or <code>orbit</code>)</td></tr>
+    <tr><td>Train a skill</td><td><code>.venv/bin/python train.py --name &lt;run&gt; --task gate --detector noisy --wide-starts --randomize</code></td></tr>
+    <tr><td>Fine-tune from a checkpoint</td><td>add <code>--resume &lt;model.zip&gt; --learning-rate 1e-4</code></td></tr>
+    <tr><td>Score a controller</td><td><code>.venv/bin/python tools/eval_gate.py &lt;controller&gt; --task mission --episodes 60 --seed 30000</code></td></tr>
+    <tr><td>Record mission handoffs</td><td><code>.venv/bin/python tools/record_handoffs.py --missions 200</code></td></tr>
+    <tr><td>Train a skill's done detector</td><td><code>.venv/bin/python tools/train_done_detector.py --task gate --policy &lt;model.zip&gt;</code> (saved beside the policy)</td></tr>
+    <tr><td>Training curves</td><td><code>.venv/bin/tensorboard --logdir runs</code>, then http://localhost:6006</td></tr>
+  </tbody>
+</table></div>
+<p>Trained runs live in <code>runs/</code>, which git ignores; older runs are in <code>runs_archive/</code>.</p>
+<h3>Code map</h3>
+<p>Files marked Pi use only numpy and the standard library.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Layer</th><th>Files</th></tr></thead>
+  <tbody>
+    <tr><td>Settings and types</td><td><code>config.py</code>, <code>core_types.py</code>, <code>world.py</code></td></tr>
+    <tr><td>Simulation</td><td><code>sim_core.py</code>, <code>collision.py</code>, <code>sensor_model.py</code>, <code>camera_geometry.py</code>, <code>detector_model.py</code></td></tr>
+    <tr><td>Perception, observation, control (Pi)</td><td><code>perception.py</code>, <code>observation.py</code>, <code>controller.py</code>, <code>done_detector.py</code></td></tr>
+    <tr><td>Learning</td><td><code>sub_env.py</code>, <code>gate_env.py</code>, <code>orbit_env.py</code>, <code>envs.py</code>, <code>train.py</code>, <code>gate_controllers.py</code></td></tr>
+    <tr><td>Mission</td><td><code>mission.py</code> (learned), <code>main.py</code>, <code>simulator.py</code>, <code>ai/</code> (scripted)</td></tr>
+    <tr><td>Display</td><td><code>sim_view.py</code>, <code>watch.py</code></td></tr>
+    <tr><td>Tools</td><td><code>tools/eval_gate.py</code>, <code>tools/train_done_detector.py</code>, <code>tools/run_headless.py</code>, <code>tools/record_handoffs.py</code>, <code>tools/check_detector.py</code>, <code>tools/check_observation.py</code></td></tr>
+  </tbody>
+</table></div>
+<h3>Conventions</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>Quantity</th><th>Convention</th></tr></thead>
+  <tbody>
+    <tr><td>Axes</td><td>x along the pool (start → gate → marker), y across, z depth positive down</td></tr>
+    <tr><td>Heading</td><td>degrees, 0 facing +x, increasing when turning left</td></tr>
+    <tr><td>Bearing</td><td>degrees from the camera's axis, positive left</td></tr>
+    <tr><td>Pitch</td><td>positive nose up</td></tr>
+    <tr><td>Sway</td><td>positive moves the sub left</td></tr>
+    <tr><td>Seeds</td><td>training 0+, handoff recording 40000+, test starts 10000+, 20000+ and 30000+, search tests 50000+, detector data 60000+</td></tr>
+  </tbody>
+</table></div>
+<h3>Limitations and next steps</h3>
+<ul>
+  <li>Not modeled: one object hiding another from the camera; pitch in the collision box; currents. Drag is a guess, varied ±20% in training.</li>
+  <li>The scripted baseline still uses ground truth in a few SIM ONLY helpers, which flatters it slightly.</li>
+  <li>The learned mission's remaining failures are rare: a false orbit-done, a missed gate. Searching for an out-of-view gate is better but not yet reliable (44 of 60 forward, 41 of 60 on the return).</li>
+  <li>The orbit's recorded training starts came from the old rule-based runner; the detector hands over at slightly different moments, so re-recording them is a cheap next step.</li>
+  <li>Later: export the actors and their normalization to numpy for the Pi, and check its outputs match PyTorch's.</li>
+  <li>The old competition course objects are kept in <code>world.py</code> for a possible full-course task.</li>
+</ul>
+
+<footer>RoboSubQualAI · ClassTech · This page is the design's source of truth; edit it alongside the code it describes.</footer>
+</div>
+</body>
+</html>
