@@ -19,7 +19,7 @@ This repo starts from RoboSubQualAI (copied 2026-10-22, fresh history). Everythi
 ## Phases (to agree on before building)
 
 ### Phase 1: Course and sim
-- [ ] Confirm the course spec above.
+- [x] Confirm the course spec above (user: where in doubt, use RoboSim; dance deferred).
 - [ ] Course geometry in `world.py`/`config.py`: the divided gate and slalom poles; collisions and pass checks (which gate opening, which side of each set's center pole).
 - [ ] Rendering and the simulated detector for the new objects: white poles (`WHITE_HSV_RANGE` is kept for this), the gate's black and red parts, the divider.
 - [ ] Check the simulated detector against OpenCV on the rendered image, as before.
