@@ -4,17 +4,17 @@ Goal: learned skills, trained in simulation, that fly the first three tasks of t
 
 This repo starts from RoboSubQualAI (copied 2026-10-22, fresh history). Everything that made the qualification run work carries over: the realistic simulator (measured thrust, frame drag, side vertical thrusters, thruster ramp, noisy sensors and detector, varied dynamics), perception and the observation, the controller, PPO training, done detectors, the plain-sequence mission runner, and the tools. The qualification-course code (gate, marker, orbit) is still here until the new course replaces it. Its history and results are in RoboSubQualAI's PLAN.md and docs/design.html.
 
-## Course (draft from ClassTech/RoboSim, the 2025 task 1-2 simulator; to confirm)
+## Course (from ClassTech/RoboSim, the 2025 tasks 1-2 simulator; where in doubt, RoboSim decides)
 
-| Item | RoboSim | To confirm |
-|---|---|---|
-| Gate | 3.048 m (10 ft) wide, 1.524 m (5 ft) poles: red top, black body; a 0.610 m divider hanging from the top bar at the center; top bar depth random 0.6-1.8 m | Divider: hanging piece or full-height pole? Colors? Top bar depth? |
-| Gate side | The sub chooses; the return goes back through the same physical opening | Free choice, or assigned (e.g. by an image)? |
-| Slalom | 3 sets; first set 8 m past the gate; sets 4 m apart; each set offset sideways up to +-0.38 m from the last | Distances |
-| Slalom set | Poles 1.524 m apart, 0.9 m tall; **white outside, red center** | User described **red outside, white center**. Pole diameter? Height above the floor? |
-| Start | 9.144 m (30 ft) before the gate, +-0.914 m sideways, heading 0, 90 or 270 deg, 0.5 m deep | "Random orientation": any heading? |
-| Return | Slalom on the opposite side relative to the sub (the same physical lane), then back through the gate's same opening | User: "same side as the gate". Same physical lane? End: back at the start, surfaced? |
-| Extras | A "victory dance" (360 deg yaw spin, then a roll) between the gate and slalom | Wanted? (The side vertical thrusters could roll the sub.) |
+| Item | Spec |
+|---|---|
+| Gate | 3.048 m (10 ft) wide, 1.524 m (5 ft) poles: red top, black body; a 0.610 m divider hanging from the top bar at the center; top bar depth random 0.6-1.8 m |
+| Gate side | The sub chooses an opening; the return goes back through the same physical opening |
+| Slalom | 3 sets; first set 8 m past the gate; sets 4 m apart; each set offset sideways up to +-0.38 m from the last |
+| Slalom set | Three poles 1.524 m apart, 0.9 m tall: white outside, red center. Each set is passed between the red and one white pole |
+| Start | 9.144 m (30 ft) before the gate, +-0.914 m sideways, heading 0, 90 or 270 deg, 0.5 m deep |
+| Return | Slalom reversed, in the same physical lane (the opposite side relative to the sub), then back through the gate's same opening; hover 10 s, then surface |
+| Victory dance | Deferred (RoboSim spins 360 deg in yaw, then rolls, between the gate and the slalom) |
 
 ## Phases (to agree on before building)
 
@@ -29,7 +29,9 @@ This repo starts from RoboSubQualAI (copied 2026-10-22, fresh history). Everythi
 - [ ] Observation for each new skill, built only from what the sub measures.
 
 ### Phase 3: Scripted baseline
-- [ ] A scripted mission for the new course (RoboSim's tasks are a starting point), scored on fixed test starts.
+- [ ] Port RoboSim's mission definition and scripted tasks, adapted to this simulator: the plan in its `main.py` is GateTask, StabilizeTask (3 s), SlalomTask, StabilizeTask (3 s), SlalomTask (reversed), GateTask, TimedHoverTask (10 s), SurfaceTask (VictoryDanceTask left out for now). Tasks come from its `ai/tasks/` (gate, slalom, stabilize, hover, timed hover, surface) and `ai/vision.py`. The forward slalom records its side so the reversed one uses the same physical lane, and the second GateTask goes back through the same opening.
+- [ ] Adapt them to this repo's sub: measured sensing only (no ground-truth helpers in the scripted loops where avoidable), the shared controller (side vertical thrusters, no pitch or roll loop), the real thrust and drag (timings and gains).
+- [ ] Score the scripted mission on fixed test starts; it's the baseline for the learned skills.
 
 ### Phase 4: Learned skills
 - [ ] Gate through a chosen side, from a random orientation (search included).
