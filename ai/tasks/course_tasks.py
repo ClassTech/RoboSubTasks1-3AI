@@ -268,8 +268,8 @@ class SlalomTask(_CourseTask):
     side is the gate's; reversed, it turns around and uses the same physical
     lane (the other side relative to the sub).
     """
-    APPROACH_SURGE = 0.6
-    CLEAR_SECONDS = 10.0       # From losing the set (~1.1 m out) to ~1.5 m past it
+    APPROACH_SURGE = 1.0       # Full thrust (RoboSim used 0.4 of its sub's speed; 0.6 here was slow)
+    CLEAR_SECONDS = 7.5        # From losing the set (~1.1 m out) to ~1.5 m past it, at full thrust
     LOST_TO_CLEAR_SECONDS = 0.75
     CLOSE_WIDTH = 0.5          # Lane (red to white) wider than this share of the image when last seen = close
     LOST_FAR_GIVE_UP_S = 5.0
