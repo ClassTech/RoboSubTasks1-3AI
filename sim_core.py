@@ -11,8 +11,9 @@ from typing import Callable, Optional, Tuple
 
 import numpy as np
 
-from collision import build_obstacles, find_collision, check_gate_crossing
-from config import SimulationConfig, PrequalConfig
+from collision import build_obstacles, find_collision, check_gate_crossing, check_pass
+from config import SimulationConfig, PrequalConfig, TasksConfig
+from course import Course, prequal_course, tasks_course
 from core_types import MPU6050Readings, ThrusterCommands
 from detector_model import DetectorModel, Detections
 from perception import CameraModel
@@ -24,6 +25,7 @@ class SubSim:
     def __init__(self, config: Optional[SimulationConfig] = None,
                  prequal: Optional[PrequalConfig] = None,
                  detector_mode: Optional[str] = "noisy",
+                 course: str = "prequal", tasks: Optional[TasksConfig] = None,
                  rng: Optional[random.Random] = None,
                  log: Optional[Callable[[str], None]] = print):
         """
@@ -32,8 +34,12 @@ class SubSim:
         rng: source of all randomness. Defaults to one seeded from the global
         random module, so random.seed() makes runs repeatable.
         log: where event messages (gate passes, collisions) go; None to silence.
+        course: 'prequal' (the qualification course) or 'tasks' (RoboSub tasks 1-3); see course.py.
         """
         assert detector_mode in ("noisy", "perfect", None), detector_mode
+        assert course in ("prequal", "tasks"), course
+        self.course_kind = course
+        self.tasks = tasks or TasksConfig()
         self.config = config or SimulationConfig()
         self.prequal = prequal or PrequalConfig()
         self.detector_mode = detector_mode
@@ -53,31 +59,39 @@ class SubSim:
 
     def reset(self):
         c, p = self.config, self.prequal
-        self.gate = PrequalGate(
-            x=p.GATE_X_POS, center_y=c.worldHeight / 2,
-            z_top=p.GATE_DEPTH_METERS, width=p.GATE_WIDTH_METERS,
-            height=p.GATE_OPENING_HEIGHT, color=p.GATE_COLOR)
-        self.marker = PrequalMarker(
-            x=p.MARKER_X_POS, y=c.worldHeight / 2,
-            z_top=-p.POLE_ABOVE_SURFACE_METERS, z_bottom=self.pole_bottom_z,
-            radius=p.MARKER_DIAMETER_METERS / 2, color=p.MARKER_COLOR)
-        self.obstacles = build_obstacles(self.gate, self.marker, c.gatePoleRadius, self.pole_bottom_z)
+        if self.course_kind == "prequal":
+            self.course: Course = prequal_course(c, p, self.pole_bottom_z)
+            # The qualification code (its environments and scripted tasks) uses these directly
+            self.gate = PrequalGate(
+                x=p.GATE_X_POS, center_y=c.worldHeight / 2,
+                z_top=p.GATE_DEPTH_METERS, width=p.GATE_WIDTH_METERS,
+                height=p.GATE_OPENING_HEIGHT, color=p.GATE_COLOR)
+            self.marker = PrequalMarker(
+                x=p.MARKER_X_POS, y=c.worldHeight / 2,
+                z_top=-p.POLE_ABOVE_SURFACE_METERS, z_bottom=self.pole_bottom_z,
+                radius=p.MARKER_DIAMETER_METERS / 2, color=p.MARKER_COLOR)
+        else:
+            self.course = tasks_course(c, self.tasks, self.pole_bottom_z, self.rng)
+            self.gate = self.marker = None
+        self.segments = self.course.segments
+        self.obstacles = build_obstacles(self.segments)
         self.detector = None
         if self.detector_mode:
-            self.detector = DetectorModel(self.camera, self.gate, self.marker,
-                                          self.pole_bottom_z, c.gatePoleRadius,
+            self.detector = DetectorModel(self.camera, self.segments,
                                           noisy=self.detector_mode == "noisy",
                                           rng=random.Random(self.rng.random()))
-        self.state = SubmarinePhysicsState(
-            x=p.START_X_POS, y=c.worldHeight / 2 + self.rng.uniform(-0.5, 0.5),
-            z=p.START_Z_POS, heading=0.0, pitch=0.0)
+        st = self.course.start
+        # (The qualification start's sideways offset is drawn here, after the detector, as it always was)
+        y = st["y"] + (self.rng.uniform(-0.5, 0.5) if self.course_kind == "prequal" else 0.0)
+        self.state = SubmarinePhysicsState(x=st["x"], y=y, z=st["z"], heading=st["heading"], pitch=0.0)
         self.true_imu = MPU6050Readings()
         self.thrust = ThrusterCommands()   # What the thrusters are actually doing (lags the commands)
         self.sensors.reset()
         self.time = 0.0
         self._accumulator = 0.0
         self.gate_passes = 0
-        self.crossings = []          # Every GateCrossing of the gate plane, in order
+        self.crossings = []          # Qualification course: every GateCrossing of the gate plane, in order
+        self.passes = []             # Every crossing of any pass line (collision.Pass), in order
         self.collision_count = 0
         self.last_collision = None
         self._time_since_contact = float('inf')
@@ -175,7 +189,16 @@ class SubSim:
         self.time += dt
 
         self._resolve_collisions(prev, dt)
-        crossing = check_gate_crossing(self.gate, prev[0], prev[1], prev[2], s.x, s.y, s.z, self.pole_bottom_z)
+        for line in self.course.pass_lines:
+            ps = check_pass(line, prev[0], prev[1], prev[2], s.x, s.y, s.z)
+            if ps:
+                self.passes.append(ps)
+                if self.course_kind == "tasks":
+                    way = "forward" if ps.direction > 0 else "back"
+                    self.log(f"{ps.line.capitalize()} crossed {way}: " + (f"{ps.lane} lane" if ps.lane else "MISSED")
+                             + f" (y={ps.y:.2f}, z={ps.z:.2f})")
+        crossing = check_gate_crossing(self.gate, prev[0], prev[1], prev[2], s.x, s.y, s.z,
+                                       self.pole_bottom_z) if self.gate else None
         if crossing:
             self.crossings.append(crossing)
             if crossing.inside_opening:

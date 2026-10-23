@@ -133,3 +133,28 @@ class PrequalConfig:
     
     # 5. Pole Extension
     POLE_ABOVE_SURFACE_METERS: float = 0.6096
+# --- Tasks 1-3 Course Configuration (from ClassTech/RoboSim, the 2025 tasks 1-2 simulator) ---
+@dataclass
+class TasksConfig:
+    # 1. Gate: two 5 ft poles 10 ft apart, each half red and half black (mirrored, so the two sides
+    #    look different), a gray top bar, and a red divider hanging from the bar's middle
+    GATE_X_POS: float = 15.0
+    GATE_WIDTH_METERS: float = 3.048          # 10 ft
+    GATE_POLE_HEIGHT: float = 1.524           # 5 ft, down from the top bar (clipped at the floor)
+    GATE_TOP_DEPTH: Tuple[float, float] = (0.6, 1.1)  # RoboSim draws 0.6-1.8 m, but below ~1.1 m the opening
+                                                      # above the 2.1 m floor gets lower than ~1 m (0.3 m at 1.8)
+    DIVIDER_HEIGHT: float = 0.610             # 2 ft, hanging from the top bar
+    DIVIDER_WIDTH: float = 0.0508             # 2 in
+    # 2. Slalom: three sets of white-red-white poles across the course
+    SLALOM_FIRST_X: float = 8.0               # Past the gate
+    SLALOM_SPACING_X: float = 4.0             # Between sets
+    SLALOM_POLE_SPACING: float = 1.524        # 5 ft, red to each white pole
+    SLALOM_SET_SHIFT: float = 1.524 * 0.25    # Each set is shifted sideways up to this from the last
+    SLALOM_POLE_HEIGHT: float = 0.9
+    SLALOM_TOP_DEPTH: Tuple[float, float] = (0.6, 0.9)  # Same for all sets in a run; the poles float above the floor
+    SLALOM_POLE_RADIUS: float = 0.0167        # Assumed 1 in PVC, like the gate
+    # 3. Start: 30 ft before the gate
+    START_BEFORE_GATE: float = 9.144
+    START_SIDEWAYS: float = 0.9144            # +- this from the course's center line
+    START_HEADINGS: Tuple[float, ...] = (0.0, 90.0, 270.0)  # deg; 0 faces the gate
+    START_Z_POS: float = 0.5

@@ -66,21 +66,12 @@ class SimView:
             if floor[0] > NEAR_PLANE:
                 pygame.draw.rect(surf, POOL_FLOOR_COLOR, (0, to_image(cam, floor)[1], w, h))
 
-        # (p1, p2, radius, color) for each object: the same geometry the detector uses.
-        segments = []
-        g, r = core.gate, self.config.gatePoleRadius
-        left, right = (g.x, g.center_y - g.width / 2), (g.x, g.center_y + g.width / 2)
-        segments.append(((*left, g.z_top), (*right, g.z_top), r, GRAY))        # Top bar
-        segments.append(((*left, g.z_top), (*left, core.pole_bottom_z), r, g.color))
-        segments.append(((*right, g.z_top), (*right, core.pole_bottom_z), r, g.color))
-        m = core.marker
-        segments.append(((m.x, m.y, m.z_top), (m.x, m.y, m.z_bottom), m.radius, m.color))
-
+        # Every course segment at its real size: the same geometry the detector boxes and collisions use
         drawable = []
-        for p1, p2, radius, color in segments:
-            poly = segment_polygon(s, cam, p1, p2, radius)
+        for sg in core.segments:
+            poly = segment_polygon(s, cam, sg.p1, sg.p2, sg.radius)
             if poly:
-                drawable.append((distance_to(s, p1, p2), color, poly))
+                drawable.append((distance_to(s, sg.p1, sg.p2), sg.color, poly))
         drawable.sort(key=lambda d: d[0], reverse=True)
         limit = 4 * max(w, h)  # Keep huge coordinates of very close objects in a range pygame handles
         for _, color, poly in drawable:
@@ -109,13 +100,20 @@ class SimView:
         screen.fill(LIGHT_BLUE)
         pygame.draw.rect(screen, BLACK, (40, 40, int(self.config.worldWidth * self.scale_x + 20),
                                          int(self.config.worldHeight * self.scale_y + 20)), 2)
-        g = core.gate
-        pygame.draw.line(screen, g.color, self.world_to_screen(g.x, g.center_y - g.width / 2),
-                         self.world_to_screen(g.x, g.center_y + g.width / 2), 4)
-        m = core.marker
-        pos, radius = self.world_to_screen(m.x, m.y), max(2, int(m.radius * self.scale_x))
-        pygame.draw.circle(screen, m.color, pos, radius)
-        pygame.draw.circle(screen, BLACK, pos, radius, 1)
+        # Top view: bars as lines, poles as dots (drawn at least 4 px so thin ones show); the
+        # half-red, half-black gate poles are drawn in their top half's color
+        seen = set()
+        for sg in core.segments:
+            a, b = sg.p1[:2], sg.p2[:2]
+            if a != b:
+                pygame.draw.line(screen, sg.color, self.world_to_screen(*a), self.world_to_screen(*b), 4)
+                continue
+            if a in seen:
+                continue
+            seen.add(a)
+            pos, radius = self.world_to_screen(*a), max(4, int(sg.radius * self.scale_x))
+            pygame.draw.circle(screen, sg.color, pos, radius)
+            pygame.draw.circle(screen, BLACK, pos, radius, 1)
         if trail and len(trail) > 1:
             pygame.draw.lines(screen, TRAIL_COLOR, False, [self.world_to_screen(x, y) for x, y in trail], 2)
         self._draw_sub(core.state)

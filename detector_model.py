@@ -9,39 +9,36 @@ Noise, in order: box position and size jitter, missed detections (range-dependen
 dropouts that last a few frames), false positives, and latency. Each reset()
 draws new noise levels, so the policy sees a range of camera conditions.
 
-Not modeled: occlusion (one object hiding another) and the gray top bar, which
-the red/green detectors ignore anyway.
+Every course segment with a detection color (course.Segment.detect: red,
+green, white or black) is boxed. Not modeled: occlusion (one object hiding
+another). The gray top bar has no detection color, as the color detectors
+ignore it.
 """
 import math
 import random
 from collections import deque
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from config import DetectorNoiseConfig
 from camera_geometry import segment_polygon
 from perception import CameraModel
-from world import PrequalGate, PrequalMarker, SubmarinePhysicsState
+from course import Segment
+from world import SubmarinePhysicsState
 
 # Noise sizes in DetectorNoiseConfig are in pixels at this image width, and scale with resolution.
 REFERENCE_WIDTH_PX = 320
 
 
-@dataclass
-class _Pole:
-    name: str
-    color: str        # 'red' or 'green'
-    x: float
-    y: float
-    z_top: float
-    z_bottom: float
-    radius: float
+COLORS = ("red", "green", "white", "black")
 
 
 @dataclass
 class Detections:
     red_blobs: List[Dict]
     green_blobs: List[Dict]
+    white_blobs: List[Dict] = field(default_factory=list)
+    black_blobs: List[Dict] = field(default_factory=list)
 
 
 def make_box(min_x: float, min_y: float, max_x: float, max_y: float) -> Dict:
@@ -57,24 +54,16 @@ def make_box(min_x: float, min_y: float, max_x: float, max_y: float) -> Dict:
 
 
 class DetectorModel:
-    def __init__(self, cam: CameraModel, gate: Optional[PrequalGate], marker: Optional[PrequalMarker],
-                 pole_bottom_z: float, gate_pole_radius: float,
-                 min_red_area: int = 50, min_green_area: int = 20,
+    def __init__(self, cam: CameraModel, segments: Sequence[Segment],
+                 min_area: Optional[Dict[str, int]] = None,
                  noise: Optional[DetectorNoiseConfig] = None, noisy: bool = True,
                  rng: Optional[random.Random] = None):
         self.cam = cam
-        self.min_area = {'red': min_red_area, 'green': min_green_area}
+        self.min_area = {'red': 50, 'green': 20, 'white': 50, 'black': 50, **(min_area or {})}
         self.noise_cfg = noise or DetectorNoiseConfig()
         self.noisy = noisy
         self.rng = rng or random.Random()
-        self.poles: List[_Pole] = []
-        if gate:
-            for name, side in (("gate left pole", -1), ("gate right pole", 1)):
-                self.poles.append(_Pole(name, 'red', gate.x, gate.center_y + side * gate.width / 2,
-                                        gate.z_top, pole_bottom_z, gate_pole_radius))
-        if marker:
-            self.poles.append(_Pole("marker", 'green', marker.x, marker.y,
-                                    marker.z_top, marker.z_bottom, marker.radius))
+        self.poles: List[Segment] = [sg for sg in segments if sg.detect]
         self.reset()
 
     def reset(self):
@@ -89,13 +78,14 @@ class DetectorModel:
         self.latency = r.uniform(*n.latencySec)
         self.time = 0.0
         self.dropout_left = {p.name: 0.0 for p in self.poles}
+        used = {p.detect for p in self.poles}
+        self.fp_colors = [c for c in COLORS if c in used]   # False positives only in colors the course uses
         self.history: deque = deque()
 
     # --- Geometry ---
-    def project_pole(self, state: SubmarinePhysicsState, pole: _Pole) -> Optional[Dict]:
-        """Noise-free bounding box of a pole, clipped to the image, or None if not in view."""
-        poly = segment_polygon(state, self.cam, (pole.x, pole.y, pole.z_top),
-                               (pole.x, pole.y, pole.z_bottom), pole.radius)
+    def project_pole(self, state: SubmarinePhysicsState, pole: Segment) -> Optional[Dict]:
+        """Noise-free bounding box of a segment, clipped to the image, or None if not in view."""
+        poly = segment_polygon(state, self.cam, pole.p1, pole.p2, pole.radius)
         if poly is None:
             return None
         w, h = self.cam.width, self.cam.height
@@ -121,7 +111,7 @@ class DetectorModel:
             return None
         return make_box(min_x, min_y, max_x, max_y)
 
-    def _detected(self, pole: _Pole, state: SubmarinePhysicsState, dt: float) -> bool:
+    def _detected(self, pole: Segment, state: SubmarinePhysicsState, dt: float) -> bool:
         """Range-dependent misses plus dropouts lasting several frames."""
         if self.dropout_left[pole.name] > 0:
             self.dropout_left[pole.name] -= dt
@@ -129,7 +119,7 @@ class DetectorModel:
         if self.rng.random() < self.dropout_rate * dt:
             self.dropout_left[pole.name] = self.rng.expovariate(1 / self.noise_cfg.dropoutMeanSec)
             return False
-        dist = math.hypot(pole.x - state.x, pole.y - state.y)
+        dist = math.hypot((pole.p1[0] + pole.p2[0]) / 2 - state.x, (pole.p1[1] + pole.p2[1]) / 2 - state.y)
         if dist <= self.clear_range:
             return True
         p_miss = (dist - self.clear_range) / (self.max_range - self.clear_range)
@@ -145,7 +135,7 @@ class DetectorModel:
     # --- Main entry point ---
     def detect(self, state: SubmarinePhysicsState, dt: float) -> Detections:
         self.time += dt
-        blobs = {'red': [], 'green': []}
+        blobs = {c: [] for c in COLORS}
         for pole in self.poles:
             box = self.project_pole(state, pole)
             if box is None:
@@ -156,15 +146,15 @@ class DetectorModel:
                 box = self._jitter(box)
                 if box is None:
                     continue
-            if box['area'] >= self.min_area[pole.color]:
-                blobs[pole.color].append(box)
+            if box['area'] >= self.min_area[pole.detect]:
+                blobs[pole.detect].append(box)
         if self.noisy:
-            for color in blobs:
+            for color in self.fp_colors:
                 if self.rng.random() < self.fp_rate * dt:
                     fp = self._false_positive()
                     if fp['area'] >= self.min_area[color]:
                         blobs[color].append(fp)
-        current = Detections(blobs['red'], blobs['green'])
+        current = Detections(blobs['red'], blobs['green'], blobs['white'], blobs['black'])
         if not self.noisy:
             return current
 

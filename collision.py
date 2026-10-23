@@ -13,7 +13,8 @@ import math
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from world import PrequalGate, PrequalMarker
+from course import PassLine, Segment
+from world import PrequalGate
 
 
 @dataclass
@@ -34,21 +35,22 @@ class GateCrossing:
     inside_opening: bool      # Between the poles and below the top bar
 
 
-def build_obstacles(gate: Optional[PrequalGate], marker: Optional[PrequalMarker],
-                    gate_pole_radius: float, pole_bottom_z: float) -> List[Obstacle]:
-    """Collision geometry matching what generateCameraView() draws."""
+@dataclass
+class Pass:
+    line: str                 # Pass line name (course.PassLine)
+    direction: int            # +1 = crossed toward +x, -1 = toward -x
+    lane: Optional[str]       # The lane crossed, or None for a miss (outside every lane)
+    y: float
+    z: float
+
+
+def build_obstacles(segments: List[Segment]) -> List[Obstacle]:
+    """Collision geometry for the course's segments (the same ones the camera draws)."""
     obstacles = []
-    if gate:
-        half_w = gate.width / 2
-        left = (gate.x, gate.center_y - half_w)
-        right = (gate.x, gate.center_y + half_w)
-        # Named as seen from the start side, facing +x: the +y pole is on the left.
-        obstacles.append(Obstacle("gate right pole", left, left, gate.z_top, pole_bottom_z, gate_pole_radius))
-        obstacles.append(Obstacle("gate left pole", right, right, gate.z_top, pole_bottom_z, gate_pole_radius))
-        obstacles.append(Obstacle("gate top bar", left, right, gate.z_top, gate.z_top, gate_pole_radius))
-    if marker:
-        p = (marker.x, marker.y)
-        obstacles.append(Obstacle("marker", p, p, marker.z_top, marker.z_bottom, marker.radius))
+    for sg in segments:
+        if sg.collide:
+            z1, z2 = sg.p1[2], sg.p2[2]
+            obstacles.append(Obstacle(sg.name, sg.p1[:2], sg.p2[:2], min(z1, z2), max(z1, z2), sg.radius))
     return obstacles
 
 
@@ -129,3 +131,18 @@ def check_gate_crossing(gate: PrequalGate, old_x: float, old_y: float, old_z: fl
     cz = old_z + t * (new_z - old_z)
     inside = abs(cy - gate.center_y) < gate.width / 2 and gate.z_top < cz < pole_bottom_z
     return GateCrossing(direction=1 if new_side > old_side else -1, y=cy, z=cz, inside_opening=inside)
+
+
+def check_pass(line: PassLine, old_x: float, old_y: float, old_z: float,
+               new_x: float, new_y: float, new_z: float) -> Optional[Pass]:
+    """Detects the sub's center crossing a pass line during one step, and which lane it went through."""
+    old_side, new_side = old_x - line.x, new_x - line.x
+    if (old_side < 0) == (new_side < 0):
+        return None
+    t = old_side / (old_side - new_side)
+    cy = old_y + t * (new_y - old_y)
+    cz = old_z + t * (new_z - old_z)
+    lane = None
+    if line.z_min < cz < line.z_max:
+        lane = next((ln.name for ln in line.lanes if ln.y_min < cy < ln.y_max), None)
+    return Pass(line.name, 1 if new_side > old_side else -1, lane, cy, cz)
