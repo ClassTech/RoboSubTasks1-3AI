@@ -282,9 +282,13 @@ class SlalomTask(_CourseTask):
     SWITCH_FROM_WIDTH = 0.8    # A set this close (lane over 80% of the image, ~1.4 m) that suddenly looks
                                # half as wide for 3 frames has been passed: the next set took its place
 
-    def __init__(self, target_depth: float, reversed: bool = False):
+    def __init__(self, target_depth: float, reversed: bool = False, side: Optional[str] = None,
+                 axis: Optional[float] = None):
+        """side ('left'/'right', relative) and axis (course heading, deg) fix those instead of taking them
+        from the gate pass, as the slalom skill's training environment needs for its baseline."""
         self.target_depth = target_depth
         self.reversed = reversed
+        self.fixed_side, self.fixed_axis = side, axis
         self.reset()
 
     def reset(self, search_direction: int = 1):
@@ -298,6 +302,10 @@ class SlalomTask(_CourseTask):
         self._started = False
 
     def _start(self, sub, sensors):
+        if self.fixed_side is not None:
+            self.side = self.fixed_side
+            self.axis = self.fixed_axis if self.fixed_axis is not None else sensors.heading
+            return
         if self.reversed:
             self.axis = (getattr(sub, "course_heading", sensors.heading) + 180.0) % 360
             forward = getattr(sub, "slalom_pass_side", None) or getattr(sub, "gate_passage_side", None) or "left"

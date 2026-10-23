@@ -10,6 +10,8 @@ smoothed over ~1 s, and the last `stack` frames concatenated, newest first.
 
 Both skills take a side to go through as an input: +1 = left, -1 = right,
 relative to the sub. On the way back, the same physical lane is the other side.
+Neither has sway: with it, the first gate policies went through crabwise and
+hit the divider they couldn't see.
 
 Gate frame (38 values; the gate skill has no sway, so 3 actions):
   own state (7)     depth, depth rate, sin/cos of heading relative to the start,
@@ -26,7 +28,7 @@ Gate frame (38 values; the gate skill has no sway, so 3 actions):
                     the same seven
   last action (3)   turn, depth, surge
 
-Slalom frame (32 values):
+Slalom frame (31 values; no sway either, so 3 actions):
   own state (7), side (1)
   red (5)           the nearest set's red pole
   our white (5)     the white pole on the commanded side of it
@@ -36,7 +38,7 @@ Slalom frame (32 values):
                     degrees (a range cue), and the smoothed turn and offset
                     (from the two poles' ranges over the 1.52 m lane: noisy, so
                     a hint more than a guide)
-  last action (4)
+  last action (3)
 """
 import math
 from collections import deque
@@ -65,7 +67,7 @@ GATE_FIELDS = (OWN_FIELDS + ["side"] + [f"left_pole_{f}" for f in TRACK] + [f"ri
                + [f"passage_{f}" for f in TRACK + GEO] + ACTIONS[:3])
 SLALOM_FIELDS = (OWN_FIELDS + ["side"] + [f"red_{f}" for f in TRACK] + [f"our_white_{f}" for f in TRACK]
                  + [f"other_white_{f}" for f in TRACK]
-                 + ["lane_found", "lane_bearing", "lane_width", "lane_turn", "lane_offset"] + ACTIONS)
+                 + ["lane_found", "lane_bearing", "lane_width", "lane_turn", "lane_offset"] + ACTIONS[:3])
 
 
 class _LaneTrack(_GateTrack):
