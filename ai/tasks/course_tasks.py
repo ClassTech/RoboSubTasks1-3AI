@@ -169,8 +169,11 @@ class CourseGateTask(_CourseTask):
     LOST_FAR_GIVE_UP_S = 5.0   # Lost while still far: keep going, but search again after this long
     ALIGN_TIMEOUT = 8.0
 
-    def __init__(self, target_depth: float):
+    def __init__(self, target_depth: float, side: Optional[str] = None):
+        """side: 'left' or 'right' (relative to the sub) to always take that passage, as the gate skill's
+        training environment asks; None picks one as described above."""
         self.target_depth = target_depth
+        self.fixed_side = side
         self.reset()
 
     def reset(self, search_direction: int = 1):
@@ -183,7 +186,9 @@ class CourseGateTask(_CourseTask):
 
     def _start(self, sub, sensors):
         passed = getattr(sub, "gate_passage_side", None)
-        if passed is not None:
+        if self.fixed_side:
+            self.forced_side = self.fixed_side
+        elif passed is not None:
             self.forced_side = "left" if passed == "right" else "right"
 
     @property

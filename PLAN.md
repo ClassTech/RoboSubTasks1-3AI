@@ -39,7 +39,10 @@ This repo starts from RoboSubQualAI (copied 2026-10-22, fresh history). Everythi
   - The slalom at full thrust instead of 60% (user: run the script at full thrust where appropriate): **58/60, 58/60 varied, 57/60 on 10000+ (173/180, 96%), ~180 s** (was ~200 s). Most of the remaining time is the sim's top speed, 0.34 m/s from the measured thrust and the estimated drag; the real sub's speed hasn't been measured yet, and it would calibrate the drag.
 
 ### Phase 4: Learned skills
-- [ ] Gate through a chosen side, from a random orientation (search included).
+- [x] Gate through a chosen side, from a random orientation (search included). `tasks_gate_env.TasksGateEnv` (`--task tasks_gate`): starts 3-10 m before the gate (RoboSim's headings or any) or 2-7 m past it facing back; the side (+1 left, -1 right, relative) drawn per episode. Reward as agreed with the user: progress to the commanded passage's center (with depth, center line and, added later, facing terms), +20 through it, +5 at 1.5 m beyond, -5 for any failure (collision, wrong passage, missed, surfaced, timeout). The mission takes the side the scripted way (the passage nearer the image center at first sight).
+  - With sway (4 actions), from scratch, 4M steps: 70% and 50% (two seeds); it went through crabwise, ~52 deg off, and hit the divider it couldn't see (19 of 25 collisions). A facing cost (1/rad over the last 3 m) changed nothing.
+  - Without sway (3 actions, as the qualification gate; sliding through would be legal in competition), from scratch: **`tgate3_s0` best: 90/100 nominal, 93/100 varied, 4-7 collisions, ~8 deg off straight at the gate line** (scripted gate task on these starts: 82/100). Seed 1 reached 57-67%.
+  - The user's fallback, not needed: a two-step gate (line up with turn and sway by maximizing the gate's apparent width, which puts the sub on its center line using only precise bearings; then drive straight through).
 - [ ] Slalom: one set on a chosen side, chained three times (or one skill for all three).
 - [ ] Turn-around and the return legs.
 - [ ] A done detector for each; the runner stays a plain sequence.

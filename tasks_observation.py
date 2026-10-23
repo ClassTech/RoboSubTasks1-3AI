@@ -11,7 +11,7 @@ smoothed over ~1 s, and the last `stack` frames concatenated, newest first.
 Both skills take a side to go through as an input: +1 = left, -1 = right,
 relative to the sub. On the way back, the same physical lane is the other side.
 
-Gate frame (39 values):
+Gate frame (38 values; the gate skill has no sway, so 3 actions):
   own state (7)     depth, depth rate, sin/cos of heading relative to the start,
                     pitch, pitch rate, yaw rate
   side (1)
@@ -24,7 +24,7 @@ Gate frame (39 values):
                     straight through and the offset from its center line
   passage (7)       the commanded passage (between its pole and the divider):
                     the same seven
-  last action (4)   turn, depth, surge, sway
+  last action (3)   turn, depth, surge
 
 Slalom frame (32 values):
   own state (7), side (1)
@@ -62,7 +62,7 @@ GEO = ["turn", "offset"]
 ACTIONS = ["action_turn", "action_depth", "action_surge", "action_sway"]
 GATE_FIELDS = (OWN_FIELDS + ["side"] + [f"left_pole_{f}" for f in TRACK] + [f"right_pole_{f}" for f in TRACK]
                + [f"divider_{f}" for f in TRACK] + [f"gate_{f}" for f in TRACK + GEO]
-               + [f"passage_{f}" for f in TRACK + GEO] + ACTIONS)
+               + [f"passage_{f}" for f in TRACK + GEO] + ACTIONS[:3])
 SLALOM_FIELDS = (OWN_FIELDS + ["side"] + [f"red_{f}" for f in TRACK] + [f"our_white_{f}" for f in TRACK]
                  + [f"other_white_{f}" for f in TRACK]
                  + ["lane_found", "lane_bearing", "lane_width", "lane_turn", "lane_offset"] + ACTIONS)
