@@ -81,6 +81,8 @@ class Viewer:
         rel_heading = (r.heading - env.builder.start_heading + 180) % 360 - 180 if env.builder.start_heading is not None else 0.0
         lines += [f"Sub: depth {r.depth:.2f} m, heading {rel_heading:+.0f} deg from start, pitch {r.pitch:+.1f} deg",
                   ""]
+        if env.core.course_kind == "tasks":
+            return lines + self._tasks_lines()
         b = env.builder
         facing_plus_x = s.x < g.x
         side = 1 if facing_plus_x else -1
@@ -113,6 +115,39 @@ class Viewer:
             handoff = f"   handoff ready: {env.handoff_ready()}" if hasattr(env, "handoff_ready") else ""
             lines.append(f"Swept around marker {env.swept:+5.0f} deg{handoff}")
         lines += ["",
+                  f"Last episode: {self.last_outcome or '-'}",
+                  "Totals: " + ", ".join(f"{self.outcome_names[k].lower()} {v}" for k, v in self.tally.items())]
+        return lines
+
+    def _tasks_lines(self):
+        """The tasks course: the commanded passage, what the gate skill believes about it, and the truth."""
+        env, r, s = self.env, self.env.readings, self.env.core.state
+        lines = []
+        if hasattr(env, "lane"):
+            way = "forward" if env.direction > 0 else "return"
+            lines.append(f"Commanded: {'left' if env.side > 0 else 'right'} passage ({way}; the course's {env.lane} lane)")
+        b = getattr(env, "builder", None)
+        if b is not None and getattr(b, "skill", None) == "gate":
+            ours = "left" if env.side > 0 else "right"
+            p = b.passages[ours]
+            if not p.seen_ever:
+                lines.append("Passage: not seen yet")
+            else:
+                seen = "in view" if p.found else f"remembered, last seen {p.unseen:.1f} s ago"
+                lines += [f"Passage: {seen}", f"  believes  bearing {p.bearing(r.heading):+6.1f} deg, range {p.range_m:5.2f} m"]
+                if p.geometry_known:
+                    turn = (p.abs_approach - r.heading + 180) % 360 - 180
+                    lines.append(f"            square-on turn {turn:+6.1f} deg, off center line {p.offset_m:+5.2f} m")
+            gx = env.core.course.info["gate_x"]
+            dx, dy = gx - s.x, env.lane_y - s.y
+            fwd = env.direction > 0
+            lines += [f"  truth     bearing {(math.degrees(math.atan2(dy, dx)) - s.heading + 180) % 360 - 180:+6.1f} deg, "
+                      f"range {math.hypot(dx, dy):5.2f} m",
+                      f"            square-on turn {((0.0 if fwd else 180.0) - s.heading + 180) % 360 - 180:+6.1f} deg, "
+                      f"off center line {(s.y - env.lane_y) * (1 if fwd else -1):+5.2f} m"]
+        passes = " ".join(f"{'G' if p.line == 'gate' else p.line[-1]}{'>' if p.direction > 0 else '<'}"
+                          f"{p.lane[0].upper() if p.lane else 'X'}" for p in env.core.passes) or "-"
+        lines += ["", f"Passes: {passes}", "",
                   f"Last episode: {self.last_outcome or '-'}",
                   "Totals: " + ", ".join(f"{self.outcome_names[k].lower()} {v}" for k, v in self.tally.items())]
         return lines
