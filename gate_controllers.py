@@ -65,7 +65,7 @@ class ScriptedController:
                                   imu=r.imu, depth_rate=r.depth_rate, x=s.x, y=s.y,
                                   velocity_x=s.velocity_x, velocity_y=s.velocity_y,
                                   angular_velocity_y=s.angular_velocity_y, velocity_z=s.velocity_z,
-                                  detections=detections)
+                                  true_heading=s.heading, detections=detections)
             with redirect_stdout(io.StringIO()):
                 commands, _ = self.sub.update(dt, sensors)
             return commands

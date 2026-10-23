@@ -63,6 +63,8 @@ class Submarine:
         self.current_task_index = 0
         for task in self.mission_plan:
             task.reset()
+        # What the tasks 1-3 mission's tasks tell each other (ai/tasks/course_tasks.py)
+        self.gate_passage_side = self.slalom_pass_side = self.course_heading = None
         # --- 3D Targets ---
         self.target_x, self.target_y = 0.0, 0.0
         self.target_heading = 0.0

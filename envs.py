@@ -2,9 +2,10 @@
 """The RL skills by name, for the tools' --task option."""
 from gate_env import GateEnv, GateReturnEnv
 from mission import MissionEnv
+from tasks_mission import TasksMissionEnv
 from orbit_env import OrbitEnv
 
-ENVS = {"gate": GateEnv, "gate_return": GateReturnEnv, "orbit": OrbitEnv, "mission": MissionEnv}
+ENVS = {"gate": GateEnv, "gate_return": GateReturnEnv, "orbit": OrbitEnv, "mission": MissionEnv, "tasks_mission": TasksMissionEnv}
 
 
 def make(task: str, detector_mode: str = "perfect", **kwargs):

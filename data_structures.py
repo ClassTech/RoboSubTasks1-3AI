@@ -14,7 +14,7 @@ import numpy as np
 from ai.vision import find_blobs_hsv
 # ---
 # --- Import HSV Ranges (needed for thresholds potentially) ---
-from config import GREEN_HSV_RANGE, RED_HSV_RANGES, SimulationConfig 
+from config import BLACK_HSV_RANGE, GREEN_HSV_RANGE, RED_HSV_RANGES, WHITE_HSV_RANGE, SimulationConfig
 # ---
 
 @dataclass
@@ -36,6 +36,9 @@ class SensorSuite:
     velocity_y: float = 0.0
     angular_velocity_y: float = 0.0 # Pitch rate (rad/s)
     velocity_z: float = 0.0
+    # True heading (deg), to turn the true velocity above into forward and sideways. Rotating it by
+    # the measured heading instead (off by up to 15 deg per run) misread forward speed as sideways
+    true_heading: Optional[float] = None
 
 # --- UPDATED Vision Class ---
 class Vision:
@@ -74,11 +77,14 @@ class Vision:
         self.hold_seconds = hold_seconds
         self.confirm_frames = confirm_frames
         self.confirm_tolerance = confirm_tolerance_fraction * image_width
+        self.tasks_course = False   # Set by the tasks mission: also look for white and black boxes with OpenCV
         self.reset()
 
     def reset(self):
         self.green_blobs: List[Dict] = []
         self.red_blobs: List[Dict] = []
+        self.white_blobs: List[Dict] = []   # Tasks course: slalom poles
+        self.black_blobs: List[Dict] = []   # Tasks course: the gate poles' black halves
         self._pole: Optional[Dict] = None
         self._gate_pair: Optional[Tuple[Dict, Dict]] = None
         self._pole_age = float('inf')   # Seconds since the pole was last actually seen
@@ -93,15 +99,19 @@ class Vision:
              # Simulated detector: boxes are already computed, skip OpenCV.
              self.green_blobs = detections.green_blobs
              self.red_blobs = detections.red_blobs
+             self.white_blobs = detections.white_blobs
+             self.black_blobs = detections.black_blobs
         else:
              current_image = self.image_provider()
              if current_image is None:
                   # Handle case where provider fails (e.g., during shutdown)
-                  self.green_blobs = []
-                  self.red_blobs = []
+                  self.green_blobs, self.red_blobs, self.white_blobs, self.black_blobs = [], [], [], []
              else:
                   self.green_blobs = find_blobs_hsv(current_image, GREEN_HSV_RANGE, self.min_pole_pixels)
                   self.red_blobs = find_blobs_hsv(current_image, RED_HSV_RANGES, self.min_gate_pixels)
+                  if self.tasks_course:
+                       self.white_blobs = find_blobs_hsv(current_image, WHITE_HSV_RANGE, self.min_gate_pixels)
+                       self.black_blobs = find_blobs_hsv(current_image, BLACK_HSV_RANGE, self.min_gate_pixels)
 
         pole = self._find_best_pole()
         pole_x = pole['center_x'] if pole else None

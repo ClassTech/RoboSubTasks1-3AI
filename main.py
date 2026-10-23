@@ -66,8 +66,16 @@ if __name__ == "__main__":
     parser.add_argument("--detector", choices=["opencv", "perfect", "noisy"], default="opencv",
                         help="opencv: run OpenCV on the rendered camera image (default). "
                              "perfect/noisy: use the simulated detector, without or with noise.")
+    parser.add_argument("--course", choices=["prequal", "tasks"], default="prequal",
+                        help="prequal: the qualification run (default). tasks: RoboSub tasks 1-3 "
+                             "(divided gate and slalom, out and back), scripted from ClassTech/RoboSim")
     args = parser.parse_args()
 
-    submarine_ai = Submarine(mission_plan=build_mission())
-    sim = SubmarineSimulator(submarine_ai=submarine_ai, detector_mode=args.detector)
+    if args.course == "tasks":
+        from tasks_mission import build_tasks_mission
+        mission = build_tasks_mission()
+    else:
+        mission = build_mission()
+    submarine_ai = Submarine(mission_plan=mission)
+    sim = SubmarineSimulator(submarine_ai=submarine_ai, detector_mode=args.detector, course=args.course)
     sim.run()

@@ -20,18 +20,20 @@ This repo starts from RoboSubQualAI (copied 2026-10-22, fresh history). Everythi
 
 ### Phase 1: Course and sim
 - [x] Confirm the course spec above (user: where in doubt, use RoboSim; dance deferred).
-- [ ] Course geometry in `world.py`/`config.py`: the divided gate and slalom poles; collisions and pass checks (which gate opening, which side of each set's center pole).
-- [ ] Rendering and the simulated detector for the new objects: white poles (`WHITE_HSV_RANGE` is kept for this), the gate's black and red parts, the divider.
-- [ ] Check the simulated detector against OpenCV on the rendered image, as before.
+- [x] Course geometry: `course.py` describes each course as segments (collisions, the camera and top views, and the simulated detector all build from them) and pass lines with named lanes; `config.TasksConfig` has RoboSim's numbers; `SubSim(course="tasks")`. The qualification course is unchanged (its scripted 57/60 and learned 60/60 scores are identical after the refactor).
+  - One departure from RoboSim: the gate's top bar is 0.6-1.1 m deep, not 0.6-1.8 m (with 1.52 m poles in a 2.1 m pool, a 1.8 m bar leaves a 0.3 m opening above the floor).
+- [x] Rendering and the simulated detector for the new objects: red, white and black boxes (the gate poles are half red, half black, mirrored; the divider is red; the slalom is white-red-white).
+- [x] OpenCV on the rendered image agrees with the simulated detector, apart from a wide, flat dark patch in the background photo and far white poles below the simulated detector's minimum size; neither is pole-shaped enough to matter.
 
 ### Phase 2: Perception and observation
 - [ ] Tell apart the gate's poles and divider from the slalom poles; estimate the chosen gate opening's center and the chosen slalom lane.
 - [ ] Observation for each new skill, built only from what the sub measures.
 
 ### Phase 3: Scripted baseline
-- [ ] Port RoboSim's mission definition and scripted tasks, adapted to this simulator: the plan in its `main.py` is GateTask, StabilizeTask (3 s), SlalomTask, StabilizeTask (3 s), SlalomTask (reversed), GateTask, TimedHoverTask (10 s), SurfaceTask (VictoryDanceTask left out for now). Tasks come from its `ai/tasks/` (gate, slalom, stabilize, hover, timed hover, surface) and `ai/vision.py`. The forward slalom records its side so the reversed one uses the same physical lane, and the second GateTask goes back through the same opening.
-- [ ] Adapt them to this repo's sub: measured sensing only (no ground-truth helpers in the scripted loops where avoidable), the shared controller (side vertical thrusters, no pitch or roll loop), the real thrust and drag (timings and gains).
-- [ ] Score the scripted mission on fixed test starts; it's the baseline for the learned skills.
+- [x] Ported RoboSim's mission and tasks: `tasks_mission.build_tasks_mission()` (gate, stabilize, slalom, stabilize, slalom reversed, gate, hover 10 s, surface; no dance) and `ai/tasks/course_tasks.py`. Run it with `.venv/bin/python main.py --course tasks`.
+- [x] Adapted to this sub (details in the module's docstring): this repo's helpers and mixer, no pitch or roll loops, a fixed 1.3 m depth, timings for 0.34 m/s, the slalom on the gate's side, the reversed slalom waiting until it has turned around.
+  - Fixes found by testing: approaches square up, slide sideways onto the passage or lane, then drive straight in correcting with sway (RoboSim turned toward the target, came in at an angle and hit poles once they left the view); losing a target only counts as passing it if it was close; the slalom finishes after 3 s with no set in view; a set counts as passed when the next one takes its place (the lane narrows by half for 3 frames); the SIM ONLY damping turns the true velocity by the true heading (by the measured one, off up to 15 deg, it read forward speed as sideways).
+- [x] `TasksMissionEnv` judges a run on ground truth: the gate, the three sets out and back, and the gate again, all in one lane. **Scripted, noisy detector: 57/60, 57/60 varied, 56/60 on 10000+ (170/180, 94%), ~200 s.** Failures: scattered pole collisions and a few wrong-course runs.
 
 ### Phase 4: Learned skills
 - [ ] Gate through a chosen side, from a random orientation (search included).

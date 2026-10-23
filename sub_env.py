@@ -62,6 +62,7 @@ class SubTaskEnv(gym.Env):
     SURFACED_PENALTY = 5.0
     EXTRA_INFO = ()          # Names of extra per-episode numbers from _episode_info()
     INCLUDE_MARKER = False   # Whether the observation tracks the green marker pole
+    COURSE = "prequal"       # Which course (course.py): 'prequal' or 'tasks'
     ACTION_DIM = 3           # 4 adds sway
     MIN_TARGET_DEPTH_M = None   # If set, the policy can't command a shallower target depth (a safety limit)
     MAX_TARGET_DEPTH_M = None   # ...or a deeper one
@@ -80,7 +81,7 @@ class SubTaskEnv(gym.Env):
         self.controller = SetpointController()
         self.on_physics_step = None   # Optional callback(env, thruster_commands) after each physics step, for viewers
         self.end_on_complete = True   # False keeps flying past success (done-detector data collection)
-        self.core = SubSim(detector_mode=detector_mode, log=None)
+        self.core = SubSim(detector_mode=detector_mode, course=self.COURSE, log=None)
         self.builder = ObservationBuilder(self.core.camera, action_dim=self.ACTION_DIM,
                                           include_marker=self.INCLUDE_MARKER)
         self.action_space = gym.spaces.Box(-1.0, 1.0, shape=(self.ACTION_DIM,), dtype=np.float32)
@@ -124,7 +125,7 @@ class SubTaskEnv(gym.Env):
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
         super().reset(seed=seed)
         rng = random.Random(int(self.np_random.integers(2 ** 31)))
-        self.core = SubSim(detector_mode=self.detector_mode, rng=rng, log=None)
+        self.core = SubSim(detector_mode=self.detector_mode, rng=rng, course=self.COURSE, log=None)
         self._place_sub(rng)
         self._vary_dynamics(rng)
 

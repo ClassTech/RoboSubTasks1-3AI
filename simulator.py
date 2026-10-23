@@ -16,12 +16,14 @@ from sim_view import SimView
 
 
 class SubmarineSimulator:
-    def __init__(self, submarine_ai: Submarine, width=1200, height=800, detector_mode: str = "opencv"):
+    def __init__(self, submarine_ai: Submarine, width=1200, height=800, detector_mode: str = "opencv",
+                 course: str = "prequal"):
         """detector_mode: 'opencv' (render the camera and run OpenCV on it),
         'perfect' (simulated detector, no noise) or 'noisy' (simulated detector with noise)."""
         assert detector_mode in ("opencv", "perfect", "noisy"), detector_mode
         self.detector_mode = detector_mode
-        self.core = SubSim(detector_mode=None if detector_mode == "opencv" else detector_mode)
+        self.core = SubSim(detector_mode=None if detector_mode == "opencv" else detector_mode, course=course)
+        submarine_ai.vision.tasks_course = course == "tasks"   # OpenCV also looks for white and black
         self.config = self.core.config
         self.view = SimView(self.config, width, height)
         self.renderCamera = True  # Headless runs with a simulated detector can skip drawing the camera image
@@ -56,7 +58,9 @@ class SubmarineSimulator:
                  f"Speed (XY): {math.hypot(s.velocity_x, s.velocity_y):.2f} m/s",
                  f"Vel Z: {s.velocity_z:.2f} m/s",
                  f"Heading: {s.heading:.1f}°", f"Pitch: {s.pitch:.1f}°", f"Depth: {s.z:.2f} m",
-                 f"Gate passes: {self.core.gate_passes}  Collisions: {self.core.collision_count}",
+                 (f"Gate passes: {self.core.gate_passes}  Collisions: {self.core.collision_count}"
+                  if self.core.course_kind == "prequal" else
+                  f"Passes: {self._passes_text()}  Collisions: {self.core.collision_count}"),
                  "", "IMU:",
                  f" Accel Y(surge): {imu.accel_y: .2f} m/s²",
                  f" Accel X(sway): {imu.accel_x: .2f} m/s²",
@@ -64,6 +68,14 @@ class SubmarineSimulator:
                  f" Gyro Z(yaw): {math.degrees(imu.gyro_z): .1f}°/s",
                  f" Gyro Y(pitch): {math.degrees(imu.gyro_y): .1f}°/s"]
         self.view.render(self.core, lines, self.lastThrusterCommands)
+
+    def _passes_text(self) -> str:
+        """Tasks course: each pass as line, direction, lane, e.g. G>R (gate forward, right lane), 2<L."""
+        parts = []
+        for p in self.core.passes:
+            line = "G" if p.line == "gate" else p.line[-1]
+            parts.append(f"{line}{'>' if p.direction > 0 else '<'}{p.lane[0].upper() if p.lane else 'X'}")
+        return " ".join(parts) or "-"
 
     def run(self):
         while self.running:
@@ -85,7 +97,7 @@ class SubmarineSimulator:
                               imu=measured.imu, depth_rate=measured.depth_rate,
                               x=s.x, y=s.y, velocity_x=s.velocity_x, velocity_y=s.velocity_y,
                               angular_velocity_y=s.angular_velocity_y, velocity_z=s.velocity_z,
-                              detections=detections)
+                              true_heading=s.heading, detections=detections)
         thrusterCommands, vision = self.submarineAI.update(dt, sensors)
         if thrusterCommands.pause_simulation: self.paused = True
         self.lastThrusterCommands = thrusterCommands
