@@ -16,7 +16,12 @@ Reward (the gate skill's structure, agreed with the user):
   success    +5, 1.5 m beyond the set after passing through the right lane
   failures   -5 each: collision, wrong lane, missed (crossing the set's line
              outside its lanes, including over or under the floating poles, or
-             back again after passing), surfaced, timeout
+             back again after passing), backwards (crossing it facing more than
+             90 deg away from the way through), surfaced, timeout
+The backwards rule closed a loophole: on the turnaround starts a policy learned
+to reverse blind through set 3 instead of turning to see it, picking a lane by
+luck. (Backing through would count in competition, but with one forward camera
+it's always blind.)
   time       -0.01 per step;  energy  -0.05 per second at full thrust
 
 Actions: turn, depth, surge (3), no sway: with sway the gate skill went
@@ -45,9 +50,10 @@ class TasksSlalomStarts:
                                           # between sets, so no other set is ever in the way
     lateral_m: tuple = (-1.5, 1.5)        # From the set's red pole
     heading_spread_deg: float = 30.0      # Facing the set within this...
-    turnaround_share: float = 0.2         # ...except these: past set 3, facing on (away from it), to come back
-                                          # through it, as after the forward slalom. Facing away anywhere else
-                                          # faced another set, which the observation then described
+    turnaround_share: float = 0.3         # ...except these: past set 3, facing on (away from it), to come back
+                                          # through it, as after the forward slalom, with the set remembered
+                                          # (_remember_set). Facing away anywhere else faced another set, which
+                                          # the observation then described
     depth_m: tuple = (1.0, 1.4)
 
 
@@ -55,7 +61,7 @@ class TasksSlalomStarts:
 class TasksSlalomReward:
     progress: float = 1.0
     depth_weight: float = 1.0
-    center_line_weight: float = 1.0
+    center_line_weight: float = 2.0   # Was 1.0: policies kept shaving the red pole, the lane's inner edge
     facing_weight: float = 1.0
     facing_range_m: float = 2.0
     lane_bonus: float = 20.0
@@ -67,7 +73,7 @@ class TasksSlalomReward:
 
 class TasksSlalomEnv(SubTaskEnv):
     COURSE = "tasks"
-    OUTCOMES = ("is_success", "collision", "wrong_lane", "missed", "surfaced", "timeout")
+    OUTCOMES = ("is_success", "collision", "wrong_lane", "missed", "backwards", "surfaced", "timeout")
     ACTION_DIM = 3
     MIN_TARGET_DEPTH_M = 1.0
     MAX_TARGET_DEPTH_M = 1.45
@@ -88,7 +94,7 @@ class TasksSlalomEnv(SubTaskEnv):
     # --- Episode ---
     def _place_sub(self, rng: random.Random):
         s, st, info = self.core.state, self.starts, self.core.course.info
-        turnaround = rng.random() < st.turnaround_share
+        turnaround = self.turnaround = rng.random() < st.turnaround_share
         self.set_index = 2 if turnaround else rng.randrange(3)
         self.set_x, self.set_y = info["slalom_centers"][self.set_index]
         self.direction = -1 if turnaround else rng.choice((1, -1))
@@ -107,6 +113,31 @@ class TasksSlalomEnv(SubTaskEnv):
     def _on_reset(self):
         self.passed, self._at_pass, self._passes_seen = False, None, 0
         self.builder.reset()
+        if self.turnaround:
+            self._remember_set()
+
+    def _remember_set(self, seen_ago_s: float = 2.0):
+        """
+        Turnaround starts: the sub has just come through this set going forward, so it saw it seconds ago.
+        Fill the observation's memory as the forward pass would have left it (labels as seen facing forward:
+        'left' is the course's left). In the mission the slalom keeps its memory from forward to back.
+        Without this, the sub started blind with the set behind it, and learned to reverse through blind.
+        """
+        s, r, b = self.core.state, self.readings, self.builder
+        offset = r.heading - s.heading            # Measured minus true heading (the magnetometer's error)
+
+        def remember(track, x, y):
+            bearing = (math.degrees(math.atan2(y - s.y, x - s.x)) - s.heading + 180.0) % 360.0 - 180.0
+            track.seen_ever, track.found = True, False
+            track.abs_bearing = s.heading + offset + bearing
+            track.range_m, track.confidence, track.unseen = math.hypot(x - s.x, y - s.y), 0.8, seen_ago_s
+            return bearing
+
+        red = remember(b.red, self.set_x, self.set_y)
+        for side, sign in (("left", 1), ("right", -1)):
+            white = remember(b.whites[side], self.set_x, self.set_y + sign * 2 * LANE_HALF_M)
+            remember(b.lanes[side], self.set_x, self.set_y + sign * LANE_HALF_M)
+            b.lanes[side].width_deg = abs(red - white)
 
     def _past_set_m(self) -> float:
         return (self.core.state.x - self.set_x) * self.direction
@@ -117,6 +148,9 @@ class TasksSlalomEnv(SubTaskEnv):
         for p in new:
             if p.line != self.line:
                 continue            # Other sets and the gate don't matter to this episode
+            through = 0.0 if p.direction > 0 else 180.0
+            if abs((self.core.state.heading - through + 180.0) % 360.0 - 180.0) > 90.0:
+                return "backwards"
             if self.passed or p.direction != self.direction or p.lane is None:
                 return "missed"
             if p.lane != self.lane:
