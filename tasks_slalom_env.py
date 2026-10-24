@@ -56,6 +56,11 @@ class TasksSlalomStarts:
                                           # rest (88% -> 73%), so turning around is its own skill now
                                           # (tasks_turnaround_env.py)
     depth_m: tuple = (1.0, 1.4)
+    gate_handoff_share: float = 0.3       # Of the rest: as the gate hands over, 5-7.5 m before set 1 going
+    gate_handoff_distance_m: tuple = (5.0, 7.5)   # out (1.5 m past the gate, 8 m before it), near the line
+    gate_handoff_lateral_m: tuple = (-0.6, 0.6)   # of the lane (set 1 lines up with the gate's passages).
+                                          # Without them the skill had trained only from 1.5-3.5 m: 39/50
+                                          # from these starts, against 49/50 between sets
 
 
 @dataclass
@@ -96,19 +101,24 @@ class TasksSlalomEnv(SubTaskEnv):
     def _place_sub(self, rng: random.Random):
         s, st, info = self.core.state, self.starts, self.core.course.info
         turnaround = self.turnaround = rng.random() < st.turnaround_share
-        self.set_index = 2 if turnaround else rng.randrange(3)
+        handoff = not turnaround and rng.random() < st.gate_handoff_share
+        self.set_index = 2 if turnaround else 0 if handoff else rng.randrange(3)
         self.set_x, self.set_y = info["slalom_centers"][self.set_index]
-        self.direction = -1 if turnaround else rng.choice((1, -1))
+        self.direction = -1 if turnaround else 1 if handoff else rng.choice((1, -1))
         self.side = self.fixed_side or rng.choice((1, -1))
-        s.x = self.set_x - self.direction * rng.uniform(*st.distance_m)
-        s.y = self.set_y + rng.uniform(*st.lateral_m)
+        self.lane = "left" if (self.side > 0) == (self.direction > 0) else "right"
+        self.lane_y = self.set_y + (LANE_HALF_M if self.lane == "left" else -LANE_HALF_M)
+        if handoff:
+            s.x = self.set_x - rng.uniform(*st.gate_handoff_distance_m)
+            s.y = self.lane_y + rng.uniform(*st.gate_handoff_lateral_m)
+        else:
+            s.x = self.set_x - self.direction * rng.uniform(*st.distance_m)
+            s.y = self.set_y + rng.uniform(*st.lateral_m)
         facing = 0.0 if self.direction > 0 else 180.0
         if turnaround:
             facing += 180.0   # Still facing the way the forward slalom went
         s.heading = (facing + rng.uniform(-st.heading_spread_deg, st.heading_spread_deg)) % 360
         s.z = rng.uniform(*st.depth_m)
-        self.lane = "left" if (self.side > 0) == (self.direction > 0) else "right"
-        self.lane_y = self.set_y + (LANE_HALF_M if self.lane == "left" else -LANE_HALF_M)
         self.line = f"slalom {self.set_index + 1}"
 
     def _on_reset(self):
