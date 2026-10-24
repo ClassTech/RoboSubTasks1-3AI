@@ -52,12 +52,19 @@ def mix(surge: float, sway: float, yaw: float, heave: float) -> ThrusterCommands
     stable, not controlled). The horizontal group is scaled down on its own if
     any of its commands exceeds 1. (Scaling all six together meant hard turning
     and sliding cut the vertical thrust, and the buoyant sub floated up.)
+
+    The corner thrusters are angled 45 deg across the diagonals, so each pushes
+    toward the far side and turns the sub away from its own side: front-left
+    running forward pushes forward-right and turns right. Positive sway and yaw
+    are left. (Before 2026-10-24 the sim and this mixer had every horizontal
+    thruster mirrored left for right; consistent with each other, so nothing
+    flew differently, but the names didn't match the real sub's thrusters.)
     """
     cos_45 = 0.7071
     surge_cmd, sway_cmd = surge * cos_45, sway * cos_45
     c = ThrusterCommands(
-        hfl=surge_cmd + sway_cmd + yaw, hfr=surge_cmd - sway_cmd - yaw,
-        hal=surge_cmd - sway_cmd + yaw, har=surge_cmd + sway_cmd - yaw,
+        hfl=surge_cmd - sway_cmd - yaw, hfr=surge_cmd + sway_cmd + yaw,
+        hal=surge_cmd + sway_cmd - yaw, har=surge_cmd - sway_cmd + yaw,
         vl=heave, vr=heave)
     h_max = max(1.0, abs(c.hfl), abs(c.hfr), abs(c.hal), abs(c.har))
     c.hfl /= h_max; c.hfr /= h_max; c.hal /= h_max; c.har /= h_max

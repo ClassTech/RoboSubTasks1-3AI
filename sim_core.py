@@ -137,9 +137,9 @@ class SubSim:
         f_vl, f_vr = commands.vl * f_max, commands.vr * f_max
         cos_45 = 0.7071
         thrust_surge = (f_hfl + f_hfr + f_hal + f_har) * cos_45
-        thrust_sway = (f_hfl - f_hfr - f_hal + f_har) * cos_45
+        thrust_sway = (-f_hfl + f_hfr + f_hal - f_har) * cos_45
         thrust_heave = f_vl + f_vr   # The vertical pair is on the sides: no pitch torque (roll isn't modeled)
-        thrust_yaw = (f_hfl - f_hfr + f_hal - f_har) * self.yaw_lever_arm
+        thrust_yaw = (-f_hfl + f_hfr - f_hal + f_har) * self.yaw_lever_arm
         # Pitch is passive: weight below buoyancy rights the sub (it drives flat)
         righting_pitch = -c.pitchRightingMoment * math.sin(math.radians(s.pitch))
 
