@@ -118,7 +118,7 @@
   <thead><tr><th>Skill</th><th>Job</th><th class="num">Success, 100 test starts</th></tr></thead>
   <tbody>
     <tr><td>Gate</td><td>find the gate from any heading, go through the commanded side</td><td class="num">91% (92% varied)</td></tr>
-    <tr><td>Slalom</td><td>go through one set in the commanded lane</td><td class="num">83% (82% varied)</td></tr>
+    <tr><td>Slalom</td><td>go through one set in the commanded lane</td><td class="num">79% (81% varied); 47/50 after the gate, 50/50 between sets</td></tr>
     <tr><td>Turnaround</td><td>after set 3, turn back to face it, far enough off to see the lane</td><td class="num">97% (98% varied)</td></tr>
   </tbody>
 </table></div>
@@ -443,12 +443,20 @@
   <thead><tr><th>Skill</th><th>Policy</th><th class="num">Nominal</th><th class="num">Varied</th><th class="num">Time (median)</th><th>Failures (nominal)</th></tr></thead>
   <tbody>
     <tr><td>Gate</td><td><code>tgate3_s0</code></td><td class="num">91%</td><td class="num">92%</td><td class="num">29 s</td><td>7 collisions, 2 missed</td></tr>
-    <tr><td>Slalom (one set)</td><td><code>tslalom4_ft</code></td><td class="num">83%</td><td class="num">82%</td><td class="num">19 s</td><td>13 collisions, 1 wrong lane, 2 missed</td></tr>
+    <tr><td>Slalom (one set)</td><td><code>tslalom6_ft_s1</code></td><td class="num">79%</td><td class="num">81%</td><td class="num">18 s</td><td>19 collisions, 1 timeout, 1 missed</td></tr>
     <tr><td>Turnaround</td><td><code>tturn_s1</code></td><td class="num">97%</td><td class="num">98%</td><td class="num">6.5 s</td><td>1 collision, 1 missed, 1 timeout</td></tr>
   </tbody>
 </table></div>
-<p>The scripted gate task on the gate skill's starts: 82%. The gate's search from any heading is part of its score. The scripted slalom and turnaround can't be compared this way, because the scripted task flies the whole slalom and these tests judge one set or the turn alone.</p>
-<p>The slalom is the weak link: the mission needs six sets in a row, and 0.83⁶ is about a third. Its collisions, mostly the red pole, are the next thing to work on.</p>
+<p>The scripted gate task on the gate skill's starts: 82%. The slalom's training-start score is 70% for <code>tslalom4_ft</code> on the same mix. The gate's search from any heading is part of its score. The scripted slalom and turnaround can't be compared this way, because the scripted task flies the whole slalom and these tests judge one set or the turn alone.</p>
+<p>The slalom's training starts are harder than the mission's, and its score on them understates it. Every collision came from a start at least 0.5 m off the lane's center line, cutting in at 30–57° at the last moment with the poles already out of view; the mission doesn't hand over such starts (set 1 lines up with the gate's passages, and each set shifts at most 0.38 m). From the starts the mission does hand over:</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Starts (50 each)</th><th class="num"><code>tslalom4_ft</code></th><th class="num"><code>tslalom6_ft_s1</code></th></tr></thead>
+  <tbody>
+    <tr><td>After the gate: set 1 going out, 6–7 m before it, within 0.5 m of the lane's line</td><td class="num">31/50</td><td class="num">47/50</td></tr>
+    <tr><td>Between sets: 2–3 m before, within 0.5 m</td><td class="num">46/50</td><td class="num">50/50</td></tr>
+  </tbody>
+</table></div>
+<p>The gap after the gate came from the skill never having trained farther than 3.5 m out; 30% of its training starts are now 5–7.5 m before set 1 (<code>tslalom6_ft</code>, fine-tuned from <code>tslalom4_ft</code>; the second seed scored 46/50 and 50/50). The training-start score includes those, which is why it reads lower than the earlier 83%.</p>
 
 <h2 id="lessons">Lessons and design decisions</h2>
 <div class="lessons">
@@ -457,7 +465,8 @@
 <p><strong>Split a skill that has two jobs.</strong> Turning around was a rare, hard start inside the slalom skill: it was learned last and dragged the rest down. As its own small skill it took 20 minutes and reached 97%.</p>
 <p><strong>The runner says what, not how.</strong> A two-step gate (line up, then drive) was considered and set aside, because it would have put the how into the runner. Problems get fixed in training (rewards, starts, actions) or perception.</p>
 <p><strong>Check what the camera can actually see.</strong> A lane needs two poles 1.52 m apart in a 70° view, so it is invisible from closer than 2.2 m. That geometry, not the policy, was why turnarounds started too close kept failing.</p>
-<p><strong>Make the training starts match the mission.</strong> Slalom starts facing away anywhere but set 3 faced another set; starts up to 5 m out put the next set in the way. Neither happens in the mission.</p>
+<p><strong>Make the training starts match the mission, and test from the mission's handoffs.</strong> Slalom starts facing away anywhere but set 3 faced another set; starts up to 5 m out put the next set in the way. Neither happens in the mission. And the one handoff the slalom never trained for, 6.5 m out after the gate, was its real weak spot (31/50), hidden inside an average over harder starts. A first test of it was itself wrong (it put other sets in the way); check that a test's starts are the ones meant.</p>
+<p><strong>Check that two seeds really differ.</strong> Resuming from a checkpoint restored its own random seed, so every "two-seed" fine-tune was one run twice. Identical test results on both gave it away.</p>
 <p><strong>SIM ONLY helpers need the truth, all of it.</strong> True velocity turned by the measured heading is wrong by the magnetometer's error.</p>
 <p><strong>Names matter on the real sub.</strong> The thruster mirroring never showed in simulation, because the sim and the mixer agreed. Only checking the doc's account of one decision against the real sub's geometry found it.</p>
 <p><strong>Carried over from the qualification project:</strong> confirm detections over several frames; don't trust ranges the sensors can't support; watch for outputs pinned past their ±1 limit; watch runs, not just scores; learn "when" by supervision, not reward.</p>
@@ -502,7 +511,6 @@
 </table></div>
 <h3>Next steps</h3>
 <ul>
-  <li>Fewer slalom collisions with the red pole.</li>
   <li>A done detector for each skill; the learned mission runner; score it against the scripted 173 of 180.</li>
   <li>Measure the real sub's speed, which would calibrate the drag.</li>
   <li>Later: the victory dance; export the actors to numpy for the Pi.</li>
