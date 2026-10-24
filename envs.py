@@ -5,9 +5,10 @@ from mission import MissionEnv
 from tasks_mission import TasksMissionEnv
 from tasks_gate_env import TasksGateEnv
 from tasks_slalom_env import TasksSlalomEnv
+from tasks_turnaround_env import TasksTurnaroundEnv
 from orbit_env import OrbitEnv
 
-ENVS = {"gate": GateEnv, "gate_return": GateReturnEnv, "orbit": OrbitEnv, "mission": MissionEnv, "tasks_mission": TasksMissionEnv, "tasks_gate": TasksGateEnv, "tasks_slalom": TasksSlalomEnv}
+ENVS = {"gate": GateEnv, "gate_return": GateReturnEnv, "orbit": OrbitEnv, "mission": MissionEnv, "tasks_mission": TasksMissionEnv, "tasks_gate": TasksGateEnv, "tasks_slalom": TasksSlalomEnv, "tasks_turnaround": TasksTurnaroundEnv}
 
 
 def make(task: str, detector_mode: str = "perfect", **kwargs):

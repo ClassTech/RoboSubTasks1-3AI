@@ -50,10 +50,11 @@ class TasksSlalomStarts:
                                           # between sets, so no other set is ever in the way
     lateral_m: tuple = (-1.5, 1.5)        # From the set's red pole
     heading_spread_deg: float = 30.0      # Facing the set within this...
-    turnaround_share: float = 0.3         # ...except these: past set 3, facing on (away from it), to come back
-                                          # through it, as after the forward slalom, with the set remembered
-                                          # (_remember_set). Facing away anywhere else faced another set, which
-                                          # the observation then described
+    turnaround_share: float = 0.0         # ...except these: past set 3, facing on (away from it), to come back
+                                          # through it, with the set remembered (_remember_set). Off: at 0.3-0.5
+                                          # the skill turned around only 8-14% of the time and got worse at the
+                                          # rest (88% -> 73%), so turning around is its own skill now
+                                          # (tasks_turnaround_env.py)
     depth_m: tuple = (1.0, 1.4)
 
 
