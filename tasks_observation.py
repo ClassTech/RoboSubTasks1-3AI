@@ -13,7 +13,7 @@ relative to the sub. On the way back, the same physical lane is the other side.
 Neither has sway: with it, the first gate policies went through crabwise and
 hit the divider they couldn't see.
 
-Gate frame (38 values; the gate skill has no sway, so 3 actions):
+Gate frame (40 values; the gate skill has no sway, so 3 actions):
   own state (7)     depth, depth rate, sin/cos of heading relative to the start,
                     pitch, pitch rate, yaw rate
   side (1)
