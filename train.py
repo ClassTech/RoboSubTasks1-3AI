@@ -255,6 +255,9 @@ def main():
         model = PPO.load(args.resume, env=venv, device="cpu", tensorboard_log=os.path.join(run_dir, "tb"),
                          custom_objects={"learning_rate": schedule, "lr_schedule": schedule,
                                          "target_kl": hyper["target_kl"]})
+        # PPO.load restores the checkpoint's own seed (environments and PyTorch), so without this every
+        # fine-tune from one checkpoint was the same run, whatever --seed said
+        model.set_random_seed(args.seed)
         print(f"Resuming from {args.resume}", flush=True)
     else:
         venv = VecNormalize(venv, norm_obs=True, norm_reward=True, clip_obs=10.0, gamma=hyper["gamma"])
