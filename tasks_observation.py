@@ -57,6 +57,7 @@ GATE_CONFIRM_FRAMES = 2   # The whole gate and its passages need both poles in t
                           # one-frame dropout cost 4 frames at 3 (confirmed only 42% of the time, against
                           # 66% seen); a phantom gate would need a false red and black box stacked end to end
 WIDTH_SCALE = 30.0   # deg, lane width cue
+SET_JUMP_M = 2.0     # Half the 4 m between slalom sets: a set this much farther than the tracked one is the next
 
 OWN_FIELDS = ["depth", "depth_rate", "sin_heading", "cos_heading", "pitch", "pitch_rate", "yaw_rate"]
 TRACK = ["found", "bearing", "range", "confidence", "unseen"]
@@ -133,7 +134,7 @@ class TasksObservationBuilder:
         gate = find_gate(d.red_blobs, d.black_blobs, self.camera, depth, pitch, self.geom)
         sets = find_slalom_sets(d.red_blobs, d.white_blobs, self.camera, depth, pitch, self.geom,
                                 exclude=gate.used_reds)
-        near = sets[0] if sets else None
+        near = self._same_set(sets)
         self.red.update(near.red.estimate if near else None, heading, dt)
         for side in ("left", "right"):
             white = near.whites.get(side) if near else None
@@ -147,6 +148,20 @@ class TasksObservationBuilder:
             else:
                 track.update(None, heading, dt)
             track.update_geometry(lane.approach_deg if lane else None, lane.offset_m if lane else None, heading, dt)
+
+    def _same_set(self, sets):
+        """The nearest set, unless a set is already tracked: then only one within SET_JUMP_M of its range.
+        A slalom skill goes through one set, so its set never changes. Without this, when the near set's
+        outer white left the view (a set needs a white), the next set, 4 m farther, became 'the nearest
+        set' and the policy steered for its lane, into the near set's white."""
+        if not sets:
+            return None
+        known = self.red.seen_ever and self.red.range_m is not None
+        for s in sets:   # Nearest first
+            r = s.red.estimate.range_m
+            if not known or r is None or r < self.red.range_m + SET_JUMP_M:
+                return s
+        return None
 
     def _left_right(self, heading: float) -> List[float]:
         """The two physical poles' features, as left and right the way the sub sees them now."""

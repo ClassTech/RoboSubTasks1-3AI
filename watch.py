@@ -123,7 +123,7 @@ class Viewer:
         """The tasks course: the commanded passage, what the gate skill believes about it, and the truth."""
         env, r, s = self.env, self.env.readings, self.env.core.state
         lines = []
-        if hasattr(env, "lane"):
+        if hasattr(env, "direction"):
             way = "forward" if env.direction > 0 else "return"
             lines.append(f"Commanded: {'left' if env.side > 0 else 'right'} passage ({way}; the course's {env.lane} lane)")
         b = getattr(env, "builder", None)

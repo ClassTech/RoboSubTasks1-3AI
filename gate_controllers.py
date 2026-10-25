@@ -6,6 +6,7 @@ tools/eval_gate.py (scoring), train.py and watch.py (viewing):
   random     random actions
   straight   hold the start heading at 1.5 m and drive forward
   mission    the learned gate and orbit skills run in turn (mission.py), for --task mission
+  tasks_mission  the learned tasks 1-3 skills in turn (tasks_mission.py), for --task tasks_mission
   <path>     a saved Stable-Baselines3 PPO model (.zip)
 
 Each controller's step(env, obs) advances the environment one control period
@@ -120,5 +121,8 @@ def make_controller(name: str, seed: int = 0, action_dim: int = 3):
     if name == "mission":
         from mission import MissionRunner
         return MissionRunner()
+    if name == "tasks_mission":
+        from tasks_mission import TasksMissionRunner
+        return TasksMissionRunner()
     model, normalizer = load_policy(name)
     return policy_controller(model, normalizer, name)

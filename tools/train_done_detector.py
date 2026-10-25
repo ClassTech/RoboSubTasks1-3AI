@@ -42,7 +42,10 @@ CONFIRMS = (1, 3, 5, 10)
 
 
 def make_env(task: str, handoffs: dict, randomize: bool):
-    if task == "gate":
+    if task.startswith("tasks_"):
+        import envs   # The tasks skills' own training starts (the slalom's include the gate's handoff)
+        env = envs.make(task, "noisy", randomize=randomize)
+    elif task == "gate":
         from gate_env import GateEnv, StartConfig
         start = StartConfig(distance_m=(3.0, 11.0), lateral_m=(-3.5, 3.5), depth_m=(0.1, 1.9), search_share=0.3)
         env = GateEnv("noisy", start=start, randomize=randomize, mission_return_starts=handoffs.get("RETURN"))
@@ -53,27 +56,41 @@ def make_env(task: str, handoffs: dict, randomize: bool):
     return env
 
 
+HISTORY_TARGET = {"tasks_gate": "passage", "tasks_slalom": "red"}   # Whose closest range the detector keeps
+
+
+def history_fields(task: str):
+    """Observation indices (newest frame) of the target's found and range and the surge action, or None."""
+    if task not in HISTORY_TARGET:
+        return None
+    from tasks_observation import GATE_FIELDS, SLALOM_FIELDS
+    fields = GATE_FIELDS if task == "tasks_gate" else SLALOM_FIELDS
+    target = HISTORY_TARGET[task]
+    return np.array([fields.index(f"{target}_found"), fields.index(f"{target}_range"), fields.index("action_surge")])
+
+
 def collect(job):
     task, policy, handoffs, seeds = job
+    from done_detector import History
     from gate_controllers import load_policy
     model, norm = load_policy(policy)
     episodes = []
     for seed in seeds:
         env = make_env(task, handoffs, randomize=seed % 2 == 1)
         obs, _ = env.reset(seed=seed)
-        rows, turned, labels, onset = [], [], [], None
+        rows, turned, labels, before, onset = [], [], [], [], None
         # Practice starts begin partway around the marker, facing it, so the heading has
         # already turned about as far as the sweep
-        total, last = float(getattr(env, "_preset_swept", 0.0)), None
+        history = History(history_fields(task))
+        history.reset(float(getattr(env, "_preset_swept", 0.0)))
         with redirect_stdout(io.StringIO()):
             while True:
-                h = env.readings.heading   # Measured, as on the sub
-                total += 0.0 if last is None else (h - last + 180.0) % 360.0 - 180.0
-                last = h
+                history.update(obs, env.readings.heading)   # Measured heading, as on the sub
                 rows.append(obs)
-                turned.append(total)
+                turned.append(history.features())
                 label = bool(env.done_label())
                 labels.append(label)
+                before.append(not label and not getattr(env, "passed", True))   # Not yet through the gate or set
                 if label and onset is None:
                     onset = env.time
                 if onset is not None and env.time >= onset + EXTRA_S:
@@ -82,22 +99,25 @@ def collect(job):
                 obs, _, term, trunc, _ = env.step(action)
                 if term or trunc:
                     break
-        episodes.append((np.array(rows, dtype=np.float32), np.array(turned, dtype=np.float32), np.array(labels), onset))
+        episodes.append((np.array(rows, dtype=np.float32), np.array(turned, dtype=np.float32), np.array(labels), onset,
+                         np.array(before)))
     return episodes
 
 
-def train(x, y, epochs: int, seed: int = 0):
+def train(x, y, epochs: int, seed: int = 0, w=None):
     import torch
     torch.manual_seed(seed)
     net = torch.nn.Sequential(torch.nn.Linear(x.shape[1], 128), torch.nn.Tanh(),
                               torch.nn.Linear(128, 128), torch.nn.Tanh(), torch.nn.Linear(128, 1))
     xt, yt = torch.tensor(x), torch.tensor(y, dtype=torch.float32)
-    loss_fn = torch.nn.BCEWithLogitsLoss()
+    wt = torch.ones(len(yt)) if w is None else torch.tensor(w, dtype=torch.float32)
+    loss_fn = lambda logits, target, weight: (torch.nn.functional.binary_cross_entropy_with_logits(
+        logits, target, reduction="none") * weight).sum() / weight.sum()
     opt = torch.optim.Adam(net.parameters(), lr=1e-3)
     for _ in range(epochs):
         for idx in torch.randperm(len(xt)).split(1024):
             opt.zero_grad()
-            loss_fn(net(xt[idx]).squeeze(1), yt[idx]).backward()
+            loss_fn(net(xt[idx]).squeeze(1), yt[idx], wt[idx]).backward()
             opt.step()
     return [(m.weight.detach().numpy().T.copy(), m.bias.detach().numpy().copy())
             for m in net if isinstance(m, torch.nn.Linear)]
@@ -135,7 +155,8 @@ def judge(fired: list, onsets: list) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--task", choices=["gate", "orbit"], required=True)
+    parser.add_argument("--task", choices=["gate", "orbit", "tasks_gate", "tasks_slalom", "tasks_turnaround"],
+                        required=True)
     parser.add_argument("--policy", required=True)
     parser.add_argument("--episodes", type=int, default=800)
     parser.add_argument("--seed", type=int, default=60_000)
@@ -144,6 +165,9 @@ def main():
     parser.add_argument("--handoffs", default="runs/handoffs.json")
     parser.add_argument("--threshold", type=float, default=0.5, help="Probability above which a step counts as done")
     parser.add_argument("--confirm", type=int, default=1, help="Steps in a row above the threshold before it fires")
+    parser.add_argument("--before-weight", type=float, default=1.0,
+                        help="Weight of the moments before the pass (tasks gate and slalom). Firing before the set "
+                             "breaks the mission (the next slalom step goes through the same set), firing late doesn't")
     args = parser.parse_args()
 
     from done_detector import DoneDetector, detector_path
@@ -153,35 +177,40 @@ def main():
     jobs = [(args.task, args.policy, handoffs, seeds[i::args.workers]) for i in range(args.workers)]
     with Pool(args.workers) as pool:
         episodes = [e for part in pool.map(collect, jobs) for e in part]
-    finished = sum(onset is not None for *_, onset in episodes)
+    finished = sum(e[3] is not None for e in episodes)
     print(f"{len(episodes)} episodes, {finished} reached the finish; "
           f"{sum(len(e[0]) for e in episodes):,} labeled moments", flush=True)
 
     _, norm = load_policy(args.policy)
     mean, var, clip = norm.obs_rms.mean.astype(np.float32), norm.obs_rms.var.astype(np.float32), norm.clip_obs
-    from done_detector import TURNED_SCALE_DEG
-    features = lambda rows, turned: np.column_stack([np.clip((rows - mean) / np.sqrt(var + 1e-8), -clip, clip),
-                                                     turned / TURNED_SCALE_DEG]).astype(np.float32)
+    features = lambda rows, extra: np.column_stack([np.clip((rows - mean) / np.sqrt(var + 1e-8), -clip, clip),
+                                                    extra]).astype(np.float32)
     held_out = episodes[::5]
     train_eps = [e for i, e in enumerate(episodes) if i % 5]
-    x = np.concatenate([features(r, t) for r, t, _, _ in train_eps])
-    y = np.concatenate([l for _, _, l, _ in train_eps]).astype(np.float32)
-    layers = train(x, y, args.epochs)
+    x = np.concatenate([features(e[0], e[1]) for e in train_eps])
+    y = np.concatenate([e[2] for e in train_eps]).astype(np.float32)
+    w = np.where(np.concatenate([e[4] for e in train_eps]), args.before_weight, 1.0)
+    layers = train(x, y, args.epochs, w=w)
 
     out = detector_path(args.policy)
     arrays = {f"w{i}": w for i, (w, _) in enumerate(layers)}
     arrays.update({f"b{i}": b for i, (_, b) in enumerate(layers)})
+    fields = history_fields(args.task)
+    if fields is not None:
+        arrays["history_fields"] = fields
     save = lambda threshold, confirm: np.savez(out, n_layers=len(layers), obs_mean=mean, obs_var=var, clip_obs=clip,
                                                threshold=threshold, confirm=confirm, **arrays)
     save(args.threshold, args.confirm)
 
     # When it would first fire on episodes it never saw, for each setting
     det = DoneDetector(out)
-    probs = [np.array([det.probability(o, t) for o, t in zip(rows, turned)]) for rows, turned, _, _ in held_out]
-    onsets = [None if onset is None else float(np.argmax(labels)) * 0.1 for _, _, labels, onset in held_out]
-    acc = np.mean([(p > 0.5) == l for ps, (_, _, labels, _) in zip(probs, held_out) for p, l in zip(ps, labels)])
+    probs = [np.array([det.probability(o, t) for o, t in zip(e[0], e[1])]) for e in held_out]
+    onsets = [None if e[3] is None else float(np.argmax(e[2])) * 0.1 for e in held_out]
+    acc = np.mean([(p > 0.5) == l for ps, e in zip(probs, held_out) for p, l in zip(ps, e[2])])
+    before_fire = sum(any(p > args.threshold for p in ps[b]) if b.any() else False
+                      for ps, b in ((ps, e[4]) for ps, e in zip(probs, held_out)))
     print(f"Held out {len(held_out)} episodes ({sum(o is not None for o in onsets)} finished); "
-          f"per-moment accuracy {100 * acc:.1f}%")
+          f"per-moment accuracy {100 * acc:.1f}%; above {args.threshold} before the pass in {before_fire}")
     for threshold in THRESHOLDS:
         for confirm in CONFIRMS:
             c = judge(first_firings(probs, threshold, confirm), onsets)

@@ -15,11 +15,18 @@ back and the gate back, all in that same lane. Failures: a collision; crossing
 a gate or set line outside its lanes (missed); a lane other than the gate's
 (wrong_lane); crossing lines out of order, e.g. skipping a set (wrong_course);
 surfacing; running out of time.
+
+TasksMissionRunner (below) is the learned mission: the gate, slalom and
+turnaround skills in a plain sequence, each until its done detector fires.
+Score it with tools/eval_gate.py tasks_mission --task tasks_mission.
 """
 import random
+from collections import deque
 from typing import List, Optional
 
-from sub_env import SubTaskEnv
+import numpy as np
+
+from sub_env import DEPTH_MAX, DEPTH_MIN, SubTaskEnv
 
 MISSION_DEPTH = 1.3   # Below the deepest gate top bar (1.1 m) and within the floating slalom poles (down to 1.5 m)
 ROUTE = [("gate", 1), ("slalom 1", 1), ("slalom 2", 1), ("slalom 3", 1),
@@ -85,3 +92,121 @@ class TasksMissionEnv(SubTaskEnv):
 
     def scripted_mission(self) -> List:
         return build_tasks_mission()
+
+
+GATE_POLICY = "runs/tgate3_s0/best_model.zip"
+SLALOM_POLICY = "runs/tslalom6_ft_s1/best_model.zip"
+TURNAROUND_POLICY = "runs/tturn_s1/best_model.zip"
+OUT, BACK = 1, -1      # The side relative to the side chosen at the gate: the same, or (coming back) the other
+PLAN = [("gate", OUT), ("slalom", OUT), ("slalom", OUT), ("slalom", OUT), ("turnaround", BACK),
+        ("slalom", BACK), ("slalom", BACK), ("slalom", BACK), ("gate", BACK)]
+DEPTH_LIMITS = {"gate": (1.25, 1.65), "slalom": (1.0, 1.45), "turnaround": (1.0, 1.45)}   # As each trained
+HOLD_DEPTH_M = 1.3
+
+
+class TasksMissionRunner:
+    """
+    The learned tasks 1-3 mission. The runner says what to do, never how: a plain
+    list of (skill, side) steps, each flown by its learned policy until that
+    skill's done detector (done_detector.py) says it's finished. Then it holds
+    depth and heading (the scripted mission hovers 10 s, then surfaces).
+
+    The side is chosen as the scripted mission chooses it: the passage nearer the
+    image center when the gate's two passages are first both in view. Until then
+    the gate skill is told "left" (it's still searching). Coming back, the same
+    physical lanes are on the sub's other side.
+
+    Observations: each step starts its skill with a fresh observation, as in
+    training, except the turnaround, which keeps the slalom's memory of set 3
+    (in training its memory is filled as the forward slalom would have left it).
+    """
+    name = "tasks_mission"
+
+    def __init__(self, gate_path: str = GATE_POLICY, slalom_path: str = SLALOM_POLICY,
+                 turnaround_path: str = TURNAROUND_POLICY):
+        from done_detector import DoneDetector, detector_path
+        from gate_controllers import load_policy
+        self.skills = {}
+        for skill, path in (("gate", gate_path), ("slalom", slalom_path), ("turnaround", turnaround_path)):
+            model, norm = load_policy(path)
+            self.skills[skill] = (model, norm, DoneDetector(detector_path(path)))
+        self.last_action = None
+
+    def reset(self, env):
+        from tasks_observation import TasksObservationBuilder
+        cam = env.core.camera
+        self.builders = {"gate": TasksObservationBuilder(cam, "gate"), "slalom": TasksObservationBuilder(cam, "slalom")}
+        self.side = None                 # +1 left / -1 right, relative to the sub going out
+        self.step_index = -1
+        self.hold_heading = None
+        self.switch_times = []
+        self.last_action = None
+        self._next(env)
+
+    def state_name(self) -> str:
+        if self.step_index >= len(PLAN):
+            return "DONE: holding"
+        skill, way = PLAN[self.step_index]
+        n = sum(1 for s, w in PLAN[:self.step_index + 1] if s == skill and w == way)
+        label = {"gate": "GATE", "slalom": f"SLALOM {n if way == OUT else 4 - n}", "turnaround": "TURN AROUND"}[skill]
+        side = "" if self.side is None else f" ({'left' if self._side() > 0 else 'right'})"
+        return f"{label} {'out' if way == OUT else 'back'}{side}"
+
+    def _side(self) -> int:
+        return (self.side or 1) * PLAN[self.step_index][1]
+
+    def _builder(self, skill):
+        return self.builders["gate" if skill == "gate" else "slalom"]
+
+    def _next(self, env):
+        self.step_index += 1
+        self.switch_times.append(env.time)
+        self.skill_action = np.zeros(3, dtype=np.float32)
+        if self.step_index >= len(PLAN):
+            self.hold_heading = env.readings.heading
+            return
+        skill = PLAN[self.step_index][0]
+        b = self._builder(skill)
+        if skill == "turnaround":
+            b.start_heading, b.frames = None, deque(maxlen=b.stack)   # Keeps its tracks of set 3
+        else:
+            b.reset()
+        self.skills[skill][2].reset()
+
+    def _choose_side(self, b, heading: float):
+        """The scripted rule: the passage nearer the image center, once both passages are in view."""
+        p = b.passages
+        if self.side is None and p["left"].found and p["right"].found:
+            self.side = 1 if abs(p["left"].bearing(heading)) <= abs(p["right"].bearing(heading)) else -1
+
+    def _act(self, env):
+        skill = PLAN[self.step_index][0]
+        model, norm, detector = self.skills[skill]
+        r, d, b = env.readings, env.detections, self._builder(skill)
+        obs = b.update(r.depth, r.depth_rate, r.heading, r.pitch, r.imu.gyro_y, r.imu.gyro_z, d, self._side(),
+                       np.clip(self.skill_action, -1.0, 1.0), env.control_period)
+        if skill == "gate":
+            self._choose_side(b, r.heading)
+        a = np.asarray(model.predict(norm.normalize_obs(obs), deterministic=True)[0], dtype=np.float32)
+        return a, detector.update(obs, r.heading)
+
+    @staticmethod
+    def _depth_action(depth_m: float) -> float:
+        return (depth_m - DEPTH_MIN) / (DEPTH_MAX - DEPTH_MIN) * 2 - 1
+
+    def step(self, env, obs):
+        if self.step_index < len(PLAN):
+            self.skill_action, done = self._act(env)
+            if done:
+                self._next(env)
+                if self.step_index < len(PLAN):
+                    self.skill_action, _ = self._act(env)   # The next skill acts on this step already
+        if self.step_index < len(PLAN):
+            lo, hi = DEPTH_LIMITS[PLAN[self.step_index][0]]
+            action = np.append(np.clip(self.skill_action, -1.0, 1.0), 0.0)   # No sway
+            action[1] = float(np.clip(action[1], self._depth_action(lo), self._depth_action(hi)))
+        else:
+            turn = float(np.clip(((self.hold_heading - env.readings.heading + 180) % 360 - 180) / 45.0, -1, 1))
+            action = np.array([turn, self._depth_action(HOLD_DEPTH_M), 0.0, 0.0], dtype=np.float32)
+        self.last_action = action
+        return env.step(action)
