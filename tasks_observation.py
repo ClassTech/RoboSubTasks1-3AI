@@ -57,9 +57,6 @@ GATE_CONFIRM_FRAMES = 2   # The whole gate and its passages need both poles in t
                           # one-frame dropout cost 4 frames at 3 (confirmed only 42% of the time, against
                           # 66% seen); a phantom gate would need a false red and black box stacked end to end
 WIDTH_SCALE = 30.0   # deg, lane width cue
-SLALOM_MAX_UNSEEN = 15.0   # s. Close to a set its poles leave the view, and the sub crosses blind; with time
-                           # since seen stopping at 5 s, a slow crossing gave the policy nothing that changed,
-                           # its surge flipped +-1 each step, and it hovered on the line and crossed back
 SET_JUMP_M = 2.0     # Half the 4 m between slalom sets: a set this much farther than the tracked one is the next
 
 OWN_FIELDS = ["depth", "depth_rate", "sin_heading", "cos_heading", "pitch", "pitch_rate", "yaw_rate"]
@@ -110,11 +107,9 @@ class TasksObservationBuilder:
         self.gate = _GateTrack(confirm_frames=g)
         self.passages = {"left": _GateTrack(confirm_frames=g), "right": _GateTrack(confirm_frames=g)}
         # Slalom: the nearest set
-        u = SLALOM_MAX_UNSEEN
-        self.red = _Track(confirm_frames=c, max_unseen=u)
-        self.whites = {"left": _Track(confirm_frames=c, max_unseen=u), "right": _Track(confirm_frames=c, max_unseen=u)}
-        self.lanes = {"left": _LaneTrack(confirm_frames=c, max_unseen=u),
-                      "right": _LaneTrack(confirm_frames=c, max_unseen=u)}
+        self.red = _Track(confirm_frames=c)
+        self.whites = {"left": _Track(confirm_frames=c), "right": _Track(confirm_frames=c)}
+        self.lanes = {"left": _LaneTrack(confirm_frames=c), "right": _LaneTrack(confirm_frames=c)}
         self.frames: deque = deque(maxlen=self.stack)
 
     # --- Perception -> tracks ---

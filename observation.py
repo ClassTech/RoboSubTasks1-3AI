@@ -102,13 +102,12 @@ class _Track:
     unseen: float = MAX_UNSEEN
     confirm_frames: int = 1      # Sightings needed in a row before the track takes them
     streak: int = 0
-    max_unseen: float = MAX_UNSEEN   # Time since seen stops counting here (its feature keeps the MAX_UNSEEN scale)
 
     def update(self, est: Optional[Estimate], heading: float, dt: float):
         self.streak = self.streak + 1 if est is not None else 0
         if est is None or self.streak < self.confirm_frames:
             self.found = False
-            self.unseen = min(self.max_unseen, self.unseen + dt)
+            self.unseen = min(MAX_UNSEEN, self.unseen + dt)
             return
         self.found = self.seen_ever = True
         self.abs_bearing = heading + est.bearing_deg
