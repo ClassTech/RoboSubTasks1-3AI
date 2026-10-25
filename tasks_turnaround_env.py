@@ -44,8 +44,6 @@ import numpy as np
 
 from tasks_slalom_env import LANE_HALF_M, TARGET_DEPTH_M, TasksSlalomEnv
 
-LEAD_IN_POLICY = "runs/tslalom6_ft_s1/best_model.zip"   # With its done detector beside it
-LEAD_IN_MAX_S = 40.0
 BACK_M = 3.0               # How far from the set's line to end up
 DONE_RADIUS_M = 0.75
 DONE_FACING_DEG = 15.0
@@ -106,68 +104,9 @@ class TasksTurnaroundEnv(TasksSlalomEnv):
             obs = self._start_after_lead_in()
         return obs, info
 
-    def _lead_in_skill(self):
-        if not hasattr(self, "_lead_in_parts"):
-            from done_detector import DoneDetector, detector_path
-            from gate_controllers import load_policy
-            model, norm = load_policy(LEAD_IN_POLICY)
-            self._lead_in_parts = (model, norm, DoneDetector(detector_path(LEAD_IN_POLICY)))
-        return self._lead_in_parts
-
-    def _drive(self, action) -> bool:
-        """One control period toward the action's setpoints, without this skill's scoring. False on a collision."""
-        from sub_env import DEPTH_MAX, DEPTH_MIN, HEADING_CHANGE_DEG
-        a = np.clip(action, -1.0, 1.0)
-        heading = (self.readings.heading + HEADING_CHANGE_DEG * float(a[0])) % 360
-        depth = min(max(DEPTH_MIN + (float(a[1]) + 1) / 2 * (DEPTH_MAX - DEPTH_MIN), self.MIN_TARGET_DEPTH_M),
-                    self.MAX_TARGET_DEPTH_M)
-        dt, hits = self.core.config.physicsDt, self.core.collision_count
-        for _ in range(max(1, round(self.control_period / dt))):
-            r = self.readings
-            cmd = self.controller.update(dt, r.depth, r.depth_rate, r.heading, r.pitch, r.imu.gyro_y, r.imu.gyro_z,
-                                         heading, depth, float(a[2]), 0.0)
-            self.core.advance(dt, cmd)
-            self.readings, self.detections = self.core.read_sensors(dt), self.core.detect(dt)
-        return self.core.collision_count == hits
-
     def _lead_in(self) -> bool:
-        """Flies the slalom skill through set 3 (going out, in this episode's lane) until its detector fires.
-        False if it doesn't get through cleanly; the episode then keeps its ordinary start."""
-        model, norm, detector = self._lead_in_skill()
-        rng, s = self.np_random, self.core.state
-        s.x = self.set_x - rng.uniform(1.5, 3.0)
-        s.y = self.lane_y + rng.uniform(-0.5, 0.5)
-        s.heading, s.z = rng.uniform(-10.0, 10.0) % 360, rng.uniform(1.0, 1.4)
-        s.velocity_x = s.velocity_y = s.velocity_z = s.angular_velocity_z = 0.0
-        self.readings, self.detections = self.core.read_sensors(0.0), self.core.detect(0.0)
-        passes = len(self.core.passes)
-        self.builder.reset()
-        detector.reset()
-        action, out_side = np.zeros(3, dtype=np.float32), -self.side   # Going out, the lane is on the other side
-        for _ in range(int(LEAD_IN_MAX_S / self.control_period)):
-            r = self.readings
-            obs = self.builder.update(r.depth, r.depth_rate, r.heading, r.pitch, r.imu.gyro_y, r.imu.gyro_z,
-                                      self.detections, out_side, action, self.control_period)
-            if detector.update(obs, r.heading):
-                new = self.core.passes[passes:]
-                return [(p.line, p.direction, p.lane) for p in new] == [(self.line, 1, self.lane)]
-            action = np.clip(model.predict(norm.normalize_obs(obs), deterministic=True)[0], -1.0, 1.0)
-            if not self._drive(action):
-                return False
-        return False
-
-    def _start_after_lead_in(self) -> np.ndarray:
-        """The turnaround takes over as in the mission: the slalom's tracks kept, its frames and start heading not."""
-        from collections import deque
-        b = self.builder
-        b.start_heading, b.frames = None, deque(maxlen=b.stack)
-        self.target_heading, self.target_depth = self.readings.heading, self.readings.depth
-        self.time, self.energy = 0.0, 0.0
-        self._passes_seen, self._collisions_seen = len(self.core.passes), self.core.collision_count
-        self._submerged = True
-        self.potential = self._potential()
-        self.last_action = np.zeros(self.ACTION_DIM, dtype=np.float32)
-        return self._observe()
+        """The slalom skill through set 3, going out in this episode's lane, until its detector fires."""
+        return self._fly_slalom(2, 1, self.lane)
 
     def _physics_outcome(self) -> Optional[str]:
         new = self.core.passes[self._passes_seen:]

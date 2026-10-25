@@ -42,6 +42,8 @@ from tasks_observation import TasksObservationBuilder
 CLEAR_M = 1.5
 LANE_HALF_M = 1.524 / 2
 TARGET_DEPTH_M = 1.25
+LEAD_IN_POLICY = "runs/tslalom6_ft_s1/best_model.zip"   # With its done detector beside it
+LEAD_IN_MAX_S = 40.0
 
 
 @dataclass
@@ -61,6 +63,11 @@ class TasksSlalomStarts:
     gate_handoff_lateral_m: tuple = (-0.6, 0.6)   # of the lane (set 1 lines up with the gate's passages).
                                           # Without them the skill had trained only from 1.5-3.5 m: 39/50
                                           # from these starts, against 49/50 between sets
+    lead_in_share: float = 0.5            # Of the starts with a set before this one on the way: first fly the
+                                          # slalom skill through that set, handing over when its detector
+                                          # fires, as in the mission (moving, wherever it fired). In the first
+                                          # learned missions ~4% of slalom steps failed, against 0-2% from
+                                          # these starts at rest
 
 
 @dataclass
@@ -126,6 +133,83 @@ class TasksSlalomEnv(SubTaskEnv):
         self.builder.reset()
         if self.turnaround:
             self._remember_set()
+
+    # --- Lead-in: fly the slalom skill through the set before, as in the mission ---
+    def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
+        obs, info = super().reset(seed=seed, options=options)
+        before = self.set_index - self.direction
+        if (type(self) is TasksSlalomEnv and not self.turnaround and 0 <= before <= 2
+                and self.np_random.random() < self.starts.lead_in_share
+                and self._fly_slalom(before, self.direction, self.lane)):
+            self.builder.reset()   # Each slalom step starts with a fresh observation
+            obs = self._start_after_lead_in()
+        return obs, info
+
+    def _lead_in_skill(self):
+        if not hasattr(self, "_lead_in_parts"):
+            from done_detector import DoneDetector, detector_path
+            from gate_controllers import load_policy
+            model, norm = load_policy(LEAD_IN_POLICY)
+            self._lead_in_parts = (model, norm, DoneDetector(detector_path(LEAD_IN_POLICY)))
+        return self._lead_in_parts
+
+    def _drive(self, action) -> bool:
+        """One control period toward the action's setpoints, without this skill's scoring. False on a collision."""
+        from sub_env import DEPTH_MAX, DEPTH_MIN, HEADING_CHANGE_DEG
+        a = np.clip(action, -1.0, 1.0)
+        heading = (self.readings.heading + HEADING_CHANGE_DEG * float(a[0])) % 360
+        depth = min(max(DEPTH_MIN + (float(a[1]) + 1) / 2 * (DEPTH_MAX - DEPTH_MIN), self.MIN_TARGET_DEPTH_M),
+                    self.MAX_TARGET_DEPTH_M)
+        dt, hits = self.core.config.physicsDt, self.core.collision_count
+        for _ in range(max(1, round(self.control_period / dt))):
+            r = self.readings
+            cmd = self.controller.update(dt, r.depth, r.depth_rate, r.heading, r.pitch, r.imu.gyro_y, r.imu.gyro_z,
+                                         heading, depth, float(a[2]), 0.0)
+            self.core.advance(dt, cmd)
+            self.readings, self.detections = self.core.read_sensors(dt), self.core.detect(dt)
+        return self.core.collision_count == hits
+
+    def _fly_slalom(self, set_index: int, direction: int, lane: str) -> bool:
+        """Flies the slalom skill (LEAD_IN_POLICY) through one set in a course lane, from 1.5-3 m before it at
+        rest, until its done detector fires. True if it went through just that set, in that lane."""
+        model, norm, detector = self._lead_in_skill()
+        rng, s = self.np_random, self.core.state
+        x, y = self.core.course.info["slalom_centers"][set_index]
+        s.x = x - direction * rng.uniform(1.5, 3.0)
+        s.y = y + (LANE_HALF_M if lane == "left" else -LANE_HALF_M) + rng.uniform(-0.5, 0.5)
+        s.heading = ((0.0 if direction > 0 else 180.0) + rng.uniform(-10.0, 10.0)) % 360
+        s.z = rng.uniform(1.0, 1.4)
+        s.velocity_x = s.velocity_y = s.velocity_z = s.angular_velocity_z = 0.0
+        self.readings, self.detections = self.core.read_sensors(0.0), self.core.detect(0.0)
+        passes = len(self.core.passes)
+        self.builder.reset()
+        detector.reset()
+        side = 1 if (lane == "left") == (direction > 0) else -1   # Relative to the sub
+        action = np.zeros(3, dtype=np.float32)
+        for _ in range(int(LEAD_IN_MAX_S / self.control_period)):
+            r = self.readings
+            obs = self.builder.update(r.depth, r.depth_rate, r.heading, r.pitch, r.imu.gyro_y, r.imu.gyro_z,
+                                      self.detections, side, action, self.control_period)
+            if detector.update(obs, r.heading):
+                new = self.core.passes[passes:]
+                return [(p.line, p.direction, p.lane) for p in new] == [(f"slalom {set_index + 1}", direction, lane)]
+            action = np.clip(model.predict(norm.normalize_obs(obs), deterministic=True)[0], -1.0, 1.0)
+            if not self._drive(action):
+                return False
+        return False
+
+    def _start_after_lead_in(self) -> np.ndarray:
+        """The episode takes over where the lead-in handed over: clocks, passes and the reward's baseline."""
+        from collections import deque
+        b = self.builder
+        b.start_heading, b.frames = None, deque(maxlen=b.stack)
+        self.target_heading, self.target_depth = self.readings.heading, self.readings.depth
+        self.time, self.energy = 0.0, 0.0
+        self._passes_seen, self._collisions_seen = len(self.core.passes), self.core.collision_count
+        self._submerged = True
+        self.potential = self._potential()
+        self.last_action = np.zeros(self.ACTION_DIM, dtype=np.float32)
+        return self._observe()
 
     def _remember_set(self, seen_ago_s: float = 2.0):
         """
