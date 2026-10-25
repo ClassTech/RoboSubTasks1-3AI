@@ -47,7 +47,7 @@ HOLD_S = 3.0          # The episode carries on this long after the finish (CLEAR
                       # failures were the sub turning back across the set it had just passed
 LANE_HALF_M = 1.524 / 2
 TARGET_DEPTH_M = 1.25
-LEAD_IN_POLICY = "runs/tslalom8_ft_s4/best_model.zip"   # With its done detector beside it
+LEAD_IN_POLICY = "runs/tslalom8_dr/best_model.zip"   # With its done detector beside it
 LEAD_IN_MAX_S = 40.0
 
 
