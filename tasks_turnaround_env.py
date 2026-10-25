@@ -123,6 +123,9 @@ class TasksTurnaroundEnv(TasksSlalomEnv):
         bearing = (math.degrees(math.atan2(y - s.y, x - s.x)) - s.heading + 180.0) % 360.0 - 180.0
         return abs(bearing) < HALF_FOV_DEG - 3.0
 
+    def done_label(self) -> bool:
+        return self._complete()
+
     def _complete(self) -> bool:
         s = self.core.state
         return (math.hypot(self.target[0] - s.x, self.target[1] - s.y) < DONE_RADIUS_M

@@ -40,6 +40,10 @@ from sub_env import SubTaskEnv
 from tasks_observation import TasksObservationBuilder
 
 CLEAR_M = 1.5
+HOLD_S = 3.0          # The episode carries on this long after the finish (CLEAR_M beyond the set); crossing
+                      # back meanwhile fails. Ending at the finish left the policy untrained just past it, and
+                      # in the mission, where the done detector fires up to a second or two later, half the
+                      # failures were the sub turning back across the set it had just passed
 LANE_HALF_M = 1.524 / 2
 TARGET_DEPTH_M = 1.25
 LEAD_IN_POLICY = "runs/tslalom6_ft_s1/best_model.zip"   # With its done detector beside it
@@ -129,7 +133,7 @@ class TasksSlalomEnv(SubTaskEnv):
         self.line = f"slalom {self.set_index + 1}"
 
     def _on_reset(self):
-        self.passed, self._at_pass, self._passes_seen = False, None, 0
+        self.passed, self._at_pass, self._passes_seen, self._finished_at = False, None, 0, None
         self.builder.reset()
         if self.turnaround:
             self._remember_set()
@@ -253,8 +257,16 @@ class TasksSlalomEnv(SubTaskEnv):
             self.passed = True
         return None
 
-    def _complete(self) -> bool:
+    def done_label(self) -> bool:
+        """The finish the done detector learns: through, and CLEAR_M beyond."""
         return self.passed and self._past_set_m() >= CLEAR_M
+
+    def _complete(self) -> bool:
+        if type(self) is not TasksSlalomEnv:
+            return self.done_label()
+        if self.done_label() and self._finished_at is None:
+            self._finished_at = self.time
+        return self._finished_at is not None and self.time >= self._finished_at + HOLD_S
 
     def _terminal_reward(self, outcome: str) -> float:
         rc = self.reward_cfg
