@@ -14,7 +14,8 @@ Reward (the gate skill's structure, agreed with the user):
              phased in over the last 2 m. After the pass: its value then, +20,
              plus distance beyond the set up to 1.5 m.
   success    +5, 1.5 m beyond the set after passing through the right lane
-  failures   -5 each: collision, wrong lane, missed (crossing the set's line
+  failures   -5 each: collision, wrong lane, wrong course (crossing another set's
+             line or the gate's, as backing up through the set just passed), missed (crossing the set's line
              outside its lanes, including over or under the floating poles, or
              back again after passing), backwards (crossing it facing more than
              90 deg away from the way through), surfaced, timeout
@@ -90,7 +91,7 @@ class TasksSlalomReward:
 
 class TasksSlalomEnv(SubTaskEnv):
     COURSE = "tasks"
-    OUTCOMES = ("is_success", "collision", "wrong_lane", "missed", "backwards", "surfaced", "timeout")
+    OUTCOMES = ("is_success", "collision", "wrong_lane", "missed", "backwards", "wrong_course", "surfaced", "timeout")
     ACTION_DIM = 3
     MIN_TARGET_DEPTH_M = 1.0
     MAX_TARGET_DEPTH_M = 1.45
@@ -246,7 +247,10 @@ class TasksSlalomEnv(SubTaskEnv):
         self._passes_seen = len(self.core.passes)
         for p in new:
             if p.line != self.line:
-                continue            # Other sets and the gate don't matter to this episode
+                # Another set or the gate: as in the mission, a failure. It used to be ignored, and once the
+                # lead-in starts put the set just passed 1.5 m behind, the policy's habit of backing up first
+                # took it back through that set (most of the failures of the first lead-in fine-tune)
+                return "wrong_course"
             through = 0.0 if p.direction > 0 else 180.0
             if abs((self.core.state.heading - through + 180.0) % 360.0 - 180.0) > 90.0:
                 return "backwards"
