@@ -95,7 +95,7 @@ class TasksMissionEnv(SubTaskEnv):
 
 
 GATE_POLICY = "runs/tgate3_s0/best_model.zip"
-SLALOM_POLICY = "runs/tslalom6_ft_s1/best_model.zip"
+SLALOM_POLICY = "runs/tslalom8_ft_s4/best_model.zip"
 TURNAROUND_POLICY = "runs/tturn3_ft_s3/best_model.zip"
 OUT, BACK = 1, -1      # The side relative to the side chosen at the gate: the same, or (coming back) the other
 PLAN = [("gate", OUT), ("slalom", OUT), ("slalom", OUT), ("slalom", OUT), ("turnaround", BACK),
@@ -185,6 +185,7 @@ class TasksMissionRunner:
         r, d, b = env.readings, env.detections, self._builder(skill)
         obs = b.update(r.depth, r.depth_rate, r.heading, r.pitch, r.imu.gyro_y, r.imu.gyro_z, d, self._side(),
                        np.clip(self.skill_action, -1.0, 1.0), env.control_period)
+        self.last_obs = obs   # The current skill's observation (for viewing and debugging)
         if skill == "gate":
             self._choose_side(b, r.heading)
         a = np.asarray(model.predict(norm.normalize_obs(obs), deterministic=True)[0], dtype=np.float32)
