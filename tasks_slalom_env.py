@@ -178,6 +178,8 @@ class TasksSlalomEnv(SubTaskEnv):
         """Flies the slalom skill (LEAD_IN_POLICY) through one set in a course lane, from 1.5-3 m before it at
         rest, until its done detector fires. True if it went through just that set, in that lane."""
         model, norm, detector = self._lead_in_skill()
+        if model.observation_space.shape[0] != self.builder.size:
+            return False   # A policy for an older observation: no lead-ins until one for this one is trained
         rng, s = self.np_random, self.core.state
         x, y = self.core.course.info["slalom_centers"][set_index]
         s.x = x - direction * rng.uniform(1.5, 3.0)
@@ -234,6 +236,7 @@ class TasksSlalomEnv(SubTaskEnv):
             return bearing
 
         red = remember(b.red, self.set_x, self.set_y)
+        b.red_travel = max(abs(s.x - self.set_x) + 1.0, 0.0)   # Driven since it left the view, about 1 m before it
         for side, sign in (("left", 1), ("right", -1)):
             white = remember(b.whites[side], self.set_x, self.set_y + sign * 2 * LANE_HALF_M)
             remember(b.lanes[side], self.set_x, self.set_y + sign * LANE_HALF_M)

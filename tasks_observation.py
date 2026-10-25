@@ -28,7 +28,7 @@ Gate frame (40 values; the gate skill has no sway, so 3 actions):
                     the same seven
   last action (3)   turn, depth, surge
 
-Slalom frame (31 values; no sway either, so 3 actions):
+Slalom frame (32 values; no sway either, so 3 actions):
   own state (7), side (1)
   red (5)           the nearest set's red pole
   our white (5)     the white pole on the commanded side of it
@@ -38,6 +38,9 @@ Slalom frame (31 values; no sway either, so 3 actions):
                     degrees (a range cue), and the smoothed turn and offset
                     (from the two poles' ranges over the 1.52 m lane: noisy, so
                     a hint more than a guide)
+  red travel (1)    meters driven since the red pole was last in view, dead-reckoned
+                    from the surge commands at the sim's top speed (the red's range
+                    is the range when last seen, so together: how far through)
   last action (3)
 """
 import math
@@ -57,7 +60,9 @@ GATE_CONFIRM_FRAMES = 2   # The whole gate and its passages need both poles in t
                           # one-frame dropout cost 4 frames at 3 (confirmed only 42% of the time, against
                           # 66% seen); a phantom gate would need a false red and black box stacked end to end
 WIDTH_SCALE = 30.0   # deg, lane width cue
-SET_JUMP_M = 2.0     # Half the 4 m between slalom sets: a set this much farther than the tracked one is the next
+SET_JUMP_M = 2.0
+TOP_SPEED_MPS = 0.34   # Full surge, in the sim (the real sub's speed isn't measured yet): scales the dead reckoning
+TRAVEL_SCALE_M = 3.0     # Half the 4 m between slalom sets: a set this much farther than the tracked one is the next
 
 OWN_FIELDS = ["depth", "depth_rate", "sin_heading", "cos_heading", "pitch", "pitch_rate", "yaw_rate"]
 TRACK = ["found", "bearing", "range", "confidence", "unseen"]
@@ -68,7 +73,7 @@ GATE_FIELDS = (OWN_FIELDS + ["side"] + [f"left_pole_{f}" for f in TRACK] + [f"ri
                + [f"passage_{f}" for f in TRACK + GEO] + ACTIONS[:3])
 SLALOM_FIELDS = (OWN_FIELDS + ["side"] + [f"red_{f}" for f in TRACK] + [f"our_white_{f}" for f in TRACK]
                  + [f"other_white_{f}" for f in TRACK]
-                 + ["lane_found", "lane_bearing", "lane_width", "lane_turn", "lane_offset"] + ACTIONS[:3])
+                 + ["lane_found", "lane_bearing", "lane_width", "lane_turn", "lane_offset", "red_travel"] + ACTIONS[:3])
 
 
 class _LaneTrack(_GateTrack):
@@ -108,6 +113,7 @@ class TasksObservationBuilder:
         self.passages = {"left": _GateTrack(confirm_frames=g), "right": _GateTrack(confirm_frames=g)}
         # Slalom: the nearest set
         self.red = _Track(confirm_frames=c)
+        self.red_travel = 0.0   # m driven since the red pole was last in view, dead-reckoned from surge commands
         self.whites = {"left": _Track(confirm_frames=c), "right": _Track(confirm_frames=c)}
         self.lanes = {"left": _LaneTrack(confirm_frames=c), "right": _LaneTrack(confirm_frames=c)}
         self.frames: deque = deque(maxlen=self.stack)
@@ -198,6 +204,11 @@ class TasksObservationBuilder:
         else:
             frame += self.red.features(heading) + self.whites[ours].features(heading)
             frame += self.whites[other].features(heading) + self.lanes[ours].lane_features(heading)
+            # Dead reckoning since the set was last seen: close to a set its poles leave the view, and without
+            # this nothing in the observation changed as the sub crept through blind; it dithered on the line
+            # and crossed back (most of the learned mission's failures)
+            self.red_travel = 0.0 if self.red.found else self.red_travel + float(last_action[2]) * TOP_SPEED_MPS * dt
+            frame += [float(np.clip(self.red_travel, -3.0, 6.0)) / TRAVEL_SCALE_M]
         frame += [float(v) for v in last_action]
         assert len(frame) == self.frame_size, (len(frame), self.frame_size)
         frame = np.asarray(frame, dtype=np.float32)
