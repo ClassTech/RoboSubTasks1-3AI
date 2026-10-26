@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-Gymnasium environment for the tasks 1-3 slalom skill: go through one slalom set
-in the commanded lane (left or right of its red pole, relative to the sub) and
-carry on 1.5 m beyond it. The mission runs it three times each way; the
-starts include facing away, so turning around after the third set is part of
-the skill, not the runner's.
+Gymnasium environment for the tasks 1-3 slalom skill: the whole slalom, every
+set from the first one ahead to the last in this direction, in the commanded
+lane (left or right of the red poles, relative to the sub), then carry on 1.5 m
+beyond the last. The mission runs it once each way (user: "Run the slalom as
+one task"). It began as one set per skill step, run three times; then each
+handoff between sets came from the previous step's done detector, moving, at
+whatever moment it fired, which training never saw: skills that scored ~90% on
+one set lost about a quarter of the missions between them.
 
 Reward (the gate skill's structure, agreed with the user):
   progress   change in a score: minus the distance to the commanded lane's
@@ -68,11 +71,15 @@ class TasksSlalomStarts:
     gate_handoff_lateral_m: tuple = (-0.6, 0.6)   # of the lane (set 1 lines up with the gate's passages).
                                           # Without them the skill had trained only from 1.5-3.5 m: 39/50
                                           # from these starts, against 49/50 between sets
-    blind_share: float = 0.3              # Of the rest: the slalom skill flies in from 2-3 m until the set leaves
+    back_start_share: float = 0.3         # Of the rest: as the turnaround hands over, 2.5-3.5 m before set 3
+                                          # coming back, facing it, near the lane's line
+    back_start_distance_m: tuple = (2.5, 3.5)
+    back_start_lateral_m: tuple = (-0.5, 0.5)
+    blind_share: float = 0.0              # Of the rest (per-set skill only, unused now): the slalom skill flies in from 2-3 m until the set leaves
                                           # the view (within 2.5 m), and the episode starts there, moving, with the
                                           # memory and dead reckoning it had: the blind crossing, where the
                                           # mission's slalom hovered on the line and crossed back
-    lead_in_share: float = 0.7            # Of the starts with a set before this one on the way: first fly the
+    lead_in_share: float = 0.0            # (Per-set skill only, unused now.) Of the starts with a set before this one on the way: first fly the
                                           # slalom skill through that set, handing over when its detector
                                           # fires, as in the mission (moving, wherever it fired). In the first
                                           # learned missions ~4% of slalom steps failed, against 0-2% from
@@ -100,7 +107,7 @@ class TasksSlalomEnv(SubTaskEnv):
     MIN_TARGET_DEPTH_M = 1.0
     MAX_TARGET_DEPTH_M = 1.45
 
-    def __init__(self, detector_mode: str = "noisy", control_period: float = 0.1, max_seconds: float = 60.0,
+    def __init__(self, detector_mode: str = "noisy", control_period: float = 0.1, max_seconds: float = 120.0,
                  starts: Optional[TasksSlalomStarts] = None, reward: Optional[TasksSlalomReward] = None,
                  randomize: bool = False, side: Optional[int] = None):
         self.starts = starts or TasksSlalomStarts()
@@ -118,15 +125,20 @@ class TasksSlalomEnv(SubTaskEnv):
         s, st, info = self.core.state, self.starts, self.core.course.info
         turnaround = self.turnaround = rng.random() < st.turnaround_share
         handoff = not turnaround and rng.random() < st.gate_handoff_share
-        self.set_index = 2 if turnaround else 0 if handoff else rng.randrange(3)
-        self.set_x, self.set_y = info["slalom_centers"][self.set_index]
-        self.direction = -1 if turnaround else 1 if handoff else rng.choice((1, -1))
+        back = not turnaround and not handoff and rng.random() < st.back_start_share
+        self.set_index = 2 if turnaround or back else 0 if handoff else rng.randrange(3)
+        self.direction = -1 if turnaround or back else 1 if handoff else rng.choice((1, -1))
         self.side = self.fixed_side or rng.choice((1, -1))
         self.lane = "left" if (self.side > 0) == (self.direction > 0) else "right"
-        self.lane_y = self.set_y + (LANE_HALF_M if self.lane == "left" else -LANE_HALF_M)
+        # The whole slalom: this set and every one after it in this direction
+        self.remaining = list(range(self.set_index, 3) if self.direction > 0 else range(self.set_index, -1, -1))
+        self._aim(self.set_index)
         if handoff:
             s.x = self.set_x - rng.uniform(*st.gate_handoff_distance_m)
             s.y = self.lane_y + rng.uniform(*st.gate_handoff_lateral_m)
+        elif back:
+            s.x = self.set_x + rng.uniform(*st.back_start_distance_m)
+            s.y = self.lane_y + rng.uniform(*st.back_start_lateral_m)
         else:
             s.x = self.set_x - self.direction * rng.uniform(*st.distance_m)
             s.y = self.set_y + rng.uniform(*st.lateral_m)
@@ -135,10 +147,17 @@ class TasksSlalomEnv(SubTaskEnv):
             facing += 180.0   # Still facing the way the forward slalom went
         s.heading = (facing + rng.uniform(-st.heading_spread_deg, st.heading_spread_deg)) % 360
         s.z = rng.uniform(*st.depth_m)
-        self.line = f"slalom {self.set_index + 1}"
+
+    def _aim(self, set_index: int):
+        """The set the episode is on now, in this episode's lane."""
+        self.set_index = set_index
+        self.set_x, self.set_y = self.core.course.info["slalom_centers"][set_index]
+        self.lane_y = self.set_y + (LANE_HALF_M if self.lane == "left" else -LANE_HALF_M)
+        self.line = f"slalom {set_index + 1}"
 
     def _on_reset(self):
         self.passed, self._at_pass, self._passes_seen, self._finished_at = False, None, 0, None
+        self.sets_done = []   # Lines of the sets already through (not the last)
         self.builder.reset()
         if self.turnaround:
             self._remember_set()
@@ -269,9 +288,9 @@ class TasksSlalomEnv(SubTaskEnv):
         self._passes_seen = len(self.core.passes)
         for p in new:
             if p.line != self.line:
-                # Another set or the gate: as in the mission, a failure. It used to be ignored, and once the
-                # lead-in starts put the set just passed 1.5 m behind, the policy's habit of backing up first
-                # took it back through that set (most of the failures of the first lead-in fine-tune)
+                # Another set (one already passed, or one ahead out of order) or the gate: as in the mission, a
+                # failure. It used to be ignored, and once starts put the set just passed 1.5 m behind, the
+                # policy's habit of backing up first took it back through that set
                 return "wrong_course"
             through = 0.0 if p.direction > 0 else 180.0
             if abs((self.core.state.heading - through + 180.0) % 360.0 - 180.0) > 90.0:
@@ -280,7 +299,11 @@ class TasksSlalomEnv(SubTaskEnv):
                 return "missed"
             if p.lane != self.lane:
                 return "wrong_lane"
-            self.passed = True
+            if self.set_index != self.remaining[-1]:
+                self.sets_done.append(self.line)
+                self._aim(self.remaining[len(self.sets_done)])   # On to the next set
+            else:
+                self.passed = True   # The last set
         return None
 
     def done_label(self) -> bool:
@@ -308,11 +331,12 @@ class TasksSlalomEnv(SubTaskEnv):
                  + rc.center_line_weight * abs(s.y - self.lane_y) + rc.facing_weight * phase * off)
 
     def _potential(self) -> float:
+        done = self.reward_cfg.lane_bonus * len(getattr(self, "sets_done", []))   # Each set through so far
         if self.passed:
             if self._at_pass is None:
                 self._at_pass = self._approach_potential()
-            return self._at_pass + self.reward_cfg.lane_bonus + min(max(self._past_set_m(), 0.0), CLEAR_M)
-        return self._approach_potential()
+            return done + self._at_pass + self.reward_cfg.lane_bonus + min(max(self._past_set_m(), 0.0), CLEAR_M)
+        return done + self._approach_potential()
 
     def _observe(self) -> np.ndarray:
         r = self.readings

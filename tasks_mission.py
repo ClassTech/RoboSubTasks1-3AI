@@ -98,8 +98,7 @@ GATE_POLICY = "runs/tgate3_s0/best_model.zip"
 SLALOM_POLICY = "runs/tslalom8_dr/best_model.zip"
 TURNAROUND_POLICY = "runs/tturn3_dr/best_model.zip"
 OUT, BACK = 1, -1      # The side relative to the side chosen at the gate: the same, or (coming back) the other
-PLAN = [("gate", OUT), ("slalom", OUT), ("slalom", OUT), ("slalom", OUT), ("turnaround", BACK),
-        ("slalom", BACK), ("slalom", BACK), ("slalom", BACK), ("gate", BACK)]
+PLAN = [("gate", OUT), ("slalom", OUT), ("turnaround", BACK), ("slalom", BACK), ("gate", BACK)]
 DEPTH_LIMITS = {"gate": (1.25, 1.65), "slalom": (1.0, 1.45), "turnaround": (1.0, 1.45)}   # As each trained
 HOLD_DEPTH_M = 1.3
 
@@ -147,8 +146,7 @@ class TasksMissionRunner:
         if self.step_index >= len(PLAN):
             return "DONE: holding"
         skill, way = PLAN[self.step_index]
-        n = sum(1 for s, w in PLAN[:self.step_index + 1] if s == skill and w == way)
-        label = {"gate": "GATE", "slalom": f"SLALOM {n if way == OUT else 4 - n}", "turnaround": "TURN AROUND"}[skill]
+        label = {"gate": "GATE", "slalom": "SLALOM", "turnaround": "TURN AROUND"}[skill]
         side = "" if self.side is None else f" ({'left' if self._side() > 0 else 'right'})"
         return f"{label} {'out' if way == OUT else 'back'}{side}"
 

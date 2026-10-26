@@ -156,16 +156,17 @@ class TasksObservationBuilder:
             track.update_geometry(lane.approach_deg if lane else None, lane.offset_m if lane else None, heading, dt)
 
     def _same_set(self, sets):
-        """The nearest set, unless a set is already tracked: then only one within SET_JUMP_M of its range.
-        A slalom skill goes through one set, so its set never changes. Without this, when the near set's
-        outer white left the view (a set needs a white), the next set, 4 m farther, became 'the nearest
-        set' and the policy steered for its lane, into the near set's white."""
+        """The nearest set, unless a set is already tracked: then only one within SET_JUMP_M of its range,
+        until dead reckoning says the sub has driven past the tracked set (as far as it was when last seen).
+        Without this, when the near set's outer white left the view (a set needs a white), the next set,
+        4 m farther, became 'the nearest set' and the policy steered for its lane, into the near set's white."""
         if not sets:
             return None
         known = self.red.seen_ever and self.red.range_m is not None
+        through = known and not self.red.found and self.red_travel >= self.red.range_m
         for s in sets:   # Nearest first
             r = s.red.estimate.range_m
-            if not known or r is None or r < self.red.range_m + SET_JUMP_M:
+            if not known or through or r is None or r < self.red.range_m + SET_JUMP_M:
                 return s
         return None
 
