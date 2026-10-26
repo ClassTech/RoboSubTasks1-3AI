@@ -50,7 +50,7 @@ HOLD_S = 3.0          # The episode carries on this long after the finish (CLEAR
                       # failures were the sub turning back across the set it had just passed
 LANE_HALF_M = 1.524 / 2
 TARGET_DEPTH_M = 1.25
-LEAD_IN_POLICY = "runs/tslalom8_dr/best_model.zip"   # With its done detector beside it
+LEAD_IN_POLICY = "runs/tslalom13_whole_s13/best_model.zip"   # With its done detector beside it
 LEAD_IN_MAX_S = 40.0
 
 
@@ -201,16 +201,23 @@ class TasksSlalomEnv(SubTaskEnv):
             self.readings, self.detections = self.core.read_sensors(dt), self.core.detect(dt)
         return self.core.collision_count == hits
 
-    def _fly_slalom(self, set_index: int, direction: int, lane: str, until_blind: bool = False) -> bool:
+    def _fly_slalom(self, set_index: int, direction: int, lane: str, until_blind: bool = False,
+                    whole: bool = False) -> bool:
         """Flies the slalom skill (LEAD_IN_POLICY) through one set in a course lane, from 1.5-3 m before it at
         rest, until its done detector fires. True if it went through just that set, in that lane.
+        whole: from where the gate hands over (5-7.5 m before set 1, going out) through every set to set 3.
         until_blind: instead, from 2-3 m, stop when the set first leaves the view within 2.5 m, before crossing."""
         model, norm, detector = self._lead_in_skill()
         if model.observation_space.shape[0] != self.builder.size:
             return False   # A policy for an older observation: no lead-ins until one for this one is trained
         rng, s = self.np_random, self.core.state
         x, y = self.core.course.info["slalom_centers"][set_index]
-        s.x = x - direction * rng.uniform(2.0 if until_blind else 1.5, 3.0)
+        if whole:
+            set_index, direction = 2, 1
+            x, y = self.core.course.info["slalom_centers"][0]
+            s.x = x - rng.uniform(5.0, 7.5)
+        else:
+            s.x = x - direction * rng.uniform(2.0 if until_blind else 1.5, 3.0)
         s.y = y + (LANE_HALF_M if lane == "left" else -LANE_HALF_M) + rng.uniform(-0.5, 0.5)
         s.heading = ((0.0 if direction > 0 else 180.0) + rng.uniform(-10.0, 10.0)) % 360
         s.z = rng.uniform(1.0, 1.4)
@@ -221,7 +228,7 @@ class TasksSlalomEnv(SubTaskEnv):
         detector.reset()
         side = 1 if (lane == "left") == (direction > 0) else -1   # Relative to the sub
         action = np.zeros(3, dtype=np.float32)
-        for _ in range(int(LEAD_IN_MAX_S / self.control_period)):
+        for _ in range(int((3 if whole else 1) * LEAD_IN_MAX_S / self.control_period)):
             r = self.readings
             obs = self.builder.update(r.depth, r.depth_rate, r.heading, r.pitch, r.imu.gyro_y, r.imu.gyro_z,
                                       self.detections, side, action, self.control_period)
@@ -233,8 +240,10 @@ class TasksSlalomEnv(SubTaskEnv):
                     self.last_action = np.append(action, np.zeros(self.ACTION_DIM - 3)).astype(np.float32)
                     return True
             elif detector.update(obs, r.heading):
-                new = self.core.passes[passes:]
-                return [(p.line, p.direction, p.lane) for p in new] == [(f"slalom {set_index + 1}", direction, lane)]
+                new = [(p.line, p.direction, p.lane) for p in self.core.passes[passes:]]
+                if whole:
+                    return new == [(f"slalom {i}", 1, lane) for i in (1, 2, 3)]
+                return new == [(f"slalom {set_index + 1}", direction, lane)]
             action = np.clip(model.predict(norm.normalize_obs(obs), deterministic=True)[0], -1.0, 1.0)
             if not self._drive(action):
                 return False

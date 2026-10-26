@@ -105,8 +105,10 @@ class TasksTurnaroundEnv(TasksSlalomEnv):
         return obs, info
 
     def _lead_in(self) -> bool:
-        """The slalom skill through set 3, going out in this episode's lane, until its detector fires."""
-        return self._fly_slalom(2, 1, self.lane)
+        """The slalom skill through the whole slalom going out, in this episode's lane, from where the gate
+        hands over, until its detector fires: the memory it leaves is the mission's (flying set 3 alone left
+        a different one, and in the mission the turnaround drove off without turning)."""
+        return self._fly_slalom(2, 1, self.lane, whole=True)
 
     def _physics_outcome(self) -> Optional[str]:
         new = self.core.passes[self._passes_seen:]
