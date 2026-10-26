@@ -66,3 +66,10 @@ This repo starts from RoboSubQualAI (copied 2026-10-22, fresh history). Everythi
 - Confirm detections over several frames; don't trust ranges the sensors can't support.
 - Watch for outputs pinned past their +-1 limit.
 - Keep the runner free of hand-written rules; fix problems in training or perception.
+
+### Phase 4b: the slalom as one skill (2026-10-25/26)
+- [x] Dead reckoning in the slalom observation (`red_travel`: metres driven since the red was last in view, from surge commands). Carried trained policies across with `tools/expand_slalom_obs.py` (new input at zero weight; from scratch reached only 37-57% in 4M steps).
+- [x] One-set fine-tunes with it (gentle, then 3e-4 with blind-zone starts): the input stayed nearly unused (weights ~0.1 vs ~1.7) and the mission didn't improve (91, then 68 and 38 of 120 vs 93). Not kept.
+- [x] The slalom as one skill for all three sets (user: "Run the slalom as one task"): episodes through every remaining set, +20 each, starts as the gate and the turnaround hand over; perception moves to the next set once dead reckoning says the sub is past the tracked one. Runner: gate, slalom, turnaround, slalom, gate. `tslalom13_whole_s13`: 76/100 whole slaloms (scripted task 42/60); mission 41/60 + 46/60 = 87/120 (nine-step version 93/120), ~175 s.
+- [ ] Turnaround after a whole slalom times out (drives away without turning): lead-ins now fly the whole slalom out (80/100 from them); fine-tuning `tturn4_ft_s4/s5`.
+- [ ] Then 180 missions (nominal, varied, fresh) against the scripted 173.
