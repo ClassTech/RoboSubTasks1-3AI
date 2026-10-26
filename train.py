@@ -225,6 +225,9 @@ def main():
     parser.add_argument("--search-starts", type=float, default=0.0,
                         help="Gate skill, training only: share of episodes turned 40-110 deg away from the gate, "
                              "so it starts out of view and has to be found")
+    parser.add_argument("--log-std-init", type=float, default=0.0,
+                        help="Starting exploration spread, as a log (0 = spread 1). The dance needs less: with a "
+                             "spread of 1 on the turn (+-45 deg) the sub never held a stop still long enough to count")
     parser.add_argument("--center-line-weight", type=float, default=RewardConfig.center_line_weight,
                         help="Gate skill: reward weight for distance from the gate's center line")
     args = parser.parse_args()
@@ -235,7 +238,7 @@ def main():
     hyper = dict(n_steps=max(64, 8192 // args.envs), batch_size=256, n_epochs=10, gamma=0.995, gae_lambda=0.95,
                  learning_rate=args.learning_rate, clip_range=0.2, ent_coef=0.005,
                  target_kl=args.target_kl or None,
-                 policy_kwargs=dict(net_arch=[128, 128]))
+                 policy_kwargs=dict(net_arch=[128, 128], log_std_init=args.log_std_init))
     with open(os.path.join(run_dir, "config.json"), "w") as f:
         json.dump({**vars(args), "ppo": hyper}, f, indent=2)
     torch.set_num_threads(args.threads)
