@@ -63,6 +63,9 @@ def env_kwargs(task: str, args, scoring: bool = False) -> dict:
     if task == "orbit":
         return {"margin_rule": "soft" if scoring else args.margin_rule, "practice_starts": not scoring,
                 **randomize, **recorded}
+    if task == "tasks_turnaround" and not scoring and args.scramble_starts:
+        from tasks_turnaround_env import TurnaroundStarts
+        return {"starts": TurnaroundStarts(scramble_share=args.scramble_starts), **randomize}
     return randomize
 
 
@@ -225,6 +228,8 @@ def main():
     parser.add_argument("--search-starts", type=float, default=0.0,
                         help="Gate skill, training only: share of episodes turned 40-110 deg away from the gate, "
                              "so it starts out of view and has to be found")
+    parser.add_argument("--scramble-starts", type=float, default=0.0,
+                        help="Turnaround training only: share of starts whose white poles' stale range details are redrawn")
     parser.add_argument("--log-std-init", type=float, default=0.0,
                         help="Starting exploration spread, as a log (0 = spread 1). The dance needs less: with a "
                              "spread of 1 on the turn (+-45 deg) the sub never held a stop still long enough to count")

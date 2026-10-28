@@ -6,3 +6,4 @@ ai/tasks/__pycache__/
 runs/
 runs_archive/
 .DS_Store
+logs/

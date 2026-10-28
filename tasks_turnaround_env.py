@@ -20,7 +20,8 @@ leaves the range when last seen (~1 m: memory isn't corrected for moving) and
 seen 5-10 s ago, and there the turnaround's detector fired at once, still
 facing away. The rest (and any failed lead-in): 1-3.5 m past set 3, facing on
 (away from it) within 30 deg, with the set remembered that way
-(TasksSlalomEnv._remember_set).
+(TasksSlalomEnv._remember_set). Training can redraw the white poles' stale range
+details after a lead-in (scramble_share).
 
 Done (ground truth): about 3 m from the set's line (within 0.75 m of a point
 3 m back, in front of the commanded lane's center), facing straight back
@@ -56,7 +57,11 @@ class TurnaroundStarts:
     lateral_m: tuple = (-1.2, 1.2)
     heading_spread_deg: float = 30.0
     depth_m: tuple = (1.0, 1.4)
-    lead_in_share: float = 0.75
+    lead_in_share: float = 1.0      # Was 0.75; the mission always hands over after the whole slalom
+    scramble_share: float = 0.0     # Training: after a lead-in, the white poles' remembered range and its
+                                    # confidence (how it was measured) are redrawn. In the mission 11% of
+                                    # turnarounds remember the far white's range from its width (0.3, its
+                                    # top or bottom cut off), and only 63% of those turned around, against 96%
 
 
 @dataclass
@@ -101,8 +106,18 @@ class TasksTurnaroundEnv(TasksSlalomEnv):
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
         obs, info = super().reset(seed=seed, options=options)
         if self.np_random.random() < self.turn_starts.lead_in_share and self._lead_in():
+            if self.np_random.random() < self.turn_starts.scramble_share:
+                self._scramble_whites()
             obs = self._start_after_lead_in()
         return obs, info
+
+    def _scramble_whites(self):
+        """Stale details of the white poles that shouldn't decide which way to turn: their remembered range
+        (x0.6-1.4) and how it was measured. Bearings, which do, stay as seen."""
+        for t in self.builder.whites.values():
+            if t.seen_ever and not t.found:
+                t.range_m *= self.np_random.uniform(0.6, 1.4)
+                t.confidence = float(self.np_random.choice([0.3, 0.6, 0.8, 1.0]))
 
     def _lead_in(self) -> bool:
         """The slalom skill through the whole slalom going out, in this episode's lane, from where the gate

@@ -95,8 +95,8 @@ class TasksMissionEnv(SubTaskEnv):
 
 
 GATE_POLICY = "runs/tgate3_s0/best_model.zip"
-SLALOM_POLICY = "runs/tslalom13_whole_s13/best_model.zip"
-TURNAROUND_POLICY = "runs/tturn4_ft_s5/best_model.zip"
+SLALOM_POLICY = "runs/tslalom14_noisy_s14/best_model.zip"
+TURNAROUND_POLICY = "runs/tturn6_ft_s9/best_model.zip"
 OUT, BACK = 1, -1      # The side relative to the side chosen at the gate: the same, or (coming back) the other
 PLAN = [("gate", OUT), ("slalom", OUT), ("turnaround", BACK), ("slalom", BACK), ("gate", BACK)]
 DEPTH_LIMITS = {"gate": (1.25, 1.65), "slalom": (1.0, 1.45), "turnaround": (1.0, 1.45)}   # As each trained
