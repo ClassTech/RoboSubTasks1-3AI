@@ -9,7 +9,7 @@ What changed in the port, and why:
   so RoboSim's pitch and roll loops are gone.
 - A fixed depth (the mission's target depth) instead of RoboSim's visual depth
   servo on the gate.
-- Timings stretched for the real sub, which tops out at ~0.34 m/s.
+- Timings set for the real sub, which tops out at ~0.51 m/s.
 - The gate's drive-through is longer: the gate is 3 m wide, so its far pole
   leaves the camera's view ~3.3 m out, and "gate lost" comes that early.
 - The gate and slalom approaches square up, slide sideways until the passage
@@ -163,7 +163,7 @@ class CourseGateTask(_CourseTask):
     nearer the image center and records it; a later one goes back through the
     same physical opening, which is the other side relative to the sub.
     """
-    CLEAR_SECONDS = 16.0       # From losing the gate (~3.3 m out) to ~2 m past it, at full surge
+    CLEAR_SECONDS = 10.7       # From losing the gate (~3.3 m out) to ~2 m past it, at full surge (16 s at 0.34 m/s)
     LOST_TO_CLEAR_SECONDS = 0.75
     CLOSE_WIDTH = 0.45         # Gate wider than this share of the image when last seen = close (under ~5 m)
     LOST_FAR_GIVE_UP_S = 5.0   # Lost while still far: keep going, but search again after this long
@@ -274,7 +274,7 @@ class SlalomTask(_CourseTask):
     lane (the other side relative to the sub).
     """
     APPROACH_SURGE = 1.0       # Full thrust (RoboSim used 0.4 of its sub's speed; 0.6 here was slow)
-    CLEAR_SECONDS = 7.5        # From losing the set (~1.1 m out) to ~1.5 m past it, at full thrust
+    CLEAR_SECONDS = 5.0        # From losing the set (~1.1 m out) to ~1.5 m past it, at full thrust (7.5 s at 0.34 m/s)
     LOST_TO_CLEAR_SECONDS = 0.75
     CLOSE_WIDTH = 0.5          # Lane (red to white) wider than this share of the image when last seen = close
     LOST_FAR_GIVE_UP_S = 5.0

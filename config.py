@@ -44,14 +44,15 @@ class SimulationConfig:
     subInertia_Z: float = 0.13  # Yaw (kg m^2). Mostly frame perimeter and thrusters.
     subInertia_Y: float = 0.09  # Pitch (kg m^2)
     
-    thrusterMaxForce: float = 3.56 # Max force per thruster (N): 0.8 lbf, measured; the same forward and reverse
+    thrusterMaxForce: float = 7.85 # Max force per thruster (N): 0.8 kgf, measured; the same forward and reverse.
+                                   # (Was 3.56 N, read as 0.8 lbf, until 2026-10-28.)
     thrusterRampSec: float = 0.5  # The sub's software limits each thruster to 0.5 s from zero to full (and back)
     
     # Quadratic drag, force = coeff * v|v| (N per (m/s)^2), estimated as 0.5 * rho * Cd * A from the
     # open frame's parts: the 3/4in PVC tubes facing the flow, the thruster ducts, the battery box
     # and the electronics tube (Cd about 1.0-1.2 for the tubes and boxes, 0.5 for the dome). The sub is
     # blunt every way; forward is only slightly less draggy than sideways. Top speed at full thrust is
-    # then about 0.4 m/s either way, and it stops almost at once. (The old values, 1.5 forward and 8
+    # then about 0.5 m/s either way, and it stops almost at once. (The old values, 1.5 forward and 8
     # sideways, were from a streamlined hull: the sub coasted toward and away from the marker.)
     surgeDragCoeff: float = 60.0  # Forward/backward: about 0.12 m^2 of drag area
     swayDragCoeff: float = 70.0   # Side-to-side: the tube and battery box are longer than wide

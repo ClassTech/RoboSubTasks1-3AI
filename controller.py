@@ -23,12 +23,12 @@ def angle_diff(a1: float, a2: float) -> float:
 
 @dataclass
 class ControllerGains:
-    # Depth gains retuned for the measured thrust (3.56 N per thruster) and the draggy frame: settles a
-    # 0.5 m step in ~4.4 s with ~3 cm overshoot. (The old 2.5 / 0.4 / 5.0 took ~18 s and overshot 19 cm:
-    # the integral wound up during the slow vertical transit.)
-    depth_p: float = 9.0
-    depth_i: float = 0.1
-    depth_d: float = 3.0
+    # Depth gains tuned for the measured thrust (7.85 N per thruster) and the draggy frame: settle a
+    # 0.5 m step in ~1.8 s with ~1 cm overshoot, and ~2.1 s at the randomized extremes. (9.0 / 0.1 / 3.0,
+    # tuned when the thrust was taken as 3.56 N, rang for ~20 s at the real thrust against the 0.5 s ramp.)
+    depth_p: float = 4.5
+    depth_i: float = 0.05
+    depth_d: float = 1.0
     depth_i_clamp: float = 2.0
     heading_p: float = 0.1      # Per degree of heading error
     yaw_d: float = 4.0          # Per rad/s of yaw rate

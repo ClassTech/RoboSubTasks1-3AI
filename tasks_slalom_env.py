@@ -52,6 +52,8 @@ LANE_HALF_M = 1.524 / 2
 TARGET_DEPTH_M = 1.25
 LEAD_IN_POLICY = "runs/tslalom15_back_s17/best_model.zip"   # With its done detector beside it
 LEAD_IN_MAX_S = 40.0
+GATE_LEAD_IN_POLICY = "runs/tgate3_s0/best_model.zip"   # With its done detector beside it
+GATE_DEPTH_LIMITS_M = (1.25, 1.65)   # The mission's limits on the gate skill's depth (tasks_mission.DEPTH_LIMITS)
 TURNAROUND_LEAD_IN_POLICY = "runs/tturn6_ft_s9/best_model.zip"   # With its done detector beside it
 
 
@@ -70,6 +72,11 @@ class TasksSlalomStarts:
     gate_handoff_share: float = 0.3       # Of the rest: as the gate hands over, 5-7.5 m before set 1 going
     gate_handoff_distance_m: tuple = (5.0, 7.5)   # out (1.5 m past the gate, 8 m before it), near the line
     gate_handoff_lateral_m: tuple = (-0.6, 0.6)   # of the lane (set 1 lines up with the gate's passages).
+    gate_lead_in_share: float = 0.0       # Training: of the gate-handoff starts, first fly the gate skill
+                                          # (GATE_LEAD_IN_POLICY) from RoboSim's start through this lane's
+                                          # passage, handing over where its detector fires, moving, as in the
+                                          # mission. From the placed starts, the mission's slalom recrossed the
+                                          # gate or backed into its top bar after early handoffs
                                           # Without them the skill had trained only from 1.5-3.5 m: 39/50
                                           # from these starts, against 49/50 between sets
     back_start_share: float = 0.3         # Of the rest: as the turnaround hands over, 2.5-3.5 m before set 3
@@ -130,7 +137,7 @@ class TasksSlalomEnv(SubTaskEnv):
     def _place_sub(self, rng: random.Random):
         s, st, info = self.core.state, self.starts, self.core.course.info
         turnaround = self.turnaround = rng.random() < st.turnaround_share
-        handoff = not turnaround and rng.random() < st.gate_handoff_share
+        handoff = self.handoff = not turnaround and rng.random() < st.gate_handoff_share
         back = self.back = not turnaround and not handoff and rng.random() < st.back_start_share
         self.set_index = 2 if turnaround or back else 0 if handoff else rng.randrange(3)
         self.direction = -1 if turnaround or back else 1 if handoff else rng.choice((1, -1))
@@ -174,7 +181,11 @@ class TasksSlalomEnv(SubTaskEnv):
         if type(self) is not TasksSlalomEnv or self.turnaround:
             return obs, info
         before = self.set_index - self.direction
-        if self.back and self.np_random.random() < self.starts.back_lead_in_share:
+        if self.handoff and self.np_random.random() < self.starts.gate_lead_in_share:
+            if self._fly_gate():
+                self.builder.reset()   # The slalom step starts with a fresh observation, as in the mission
+                obs = self._start_after_lead_in()
+        elif self.back and self.np_random.random() < self.starts.back_lead_in_share:
             if self._fly_slalom(2, 1, self.lane, whole=True) and self._fly_turnaround():
                 self.builder.reset()   # The slalom step back starts with a fresh observation, as in the mission
                 obs = self._start_after_lead_in()
@@ -194,6 +205,50 @@ class TasksSlalomEnv(SubTaskEnv):
             model, norm = load_policy(LEAD_IN_POLICY)
             self._lead_in_parts = (model, norm, DoneDetector(detector_path(LEAD_IN_POLICY)))
         return self._lead_in_parts
+
+    def _fly_gate(self) -> bool:
+        """The gate skill from RoboSim's start (9.144 m before the gate, +-0.914 m sideways, heading 0, 90 or
+        270 deg, 0.5 m deep) through this episode's lane's passage, until its done detector fires. True if it
+        went through just that passage."""
+        from sub_env import DEPTH_MAX, DEPTH_MIN
+        from tasks_observation import TasksObservationBuilder
+        if not hasattr(self, "_gate_parts"):
+            from done_detector import DoneDetector, detector_path
+            from gate_controllers import load_policy
+            model, norm = load_policy(GATE_LEAD_IN_POLICY)
+            self._gate_parts = (model, norm, DoneDetector(detector_path(GATE_LEAD_IN_POLICY)),
+                                TasksObservationBuilder(self.core.camera, "gate"))
+        model, norm, detector, b = self._gate_parts
+        rng, s, info = self.np_random, self.core.state, self.core.course.info
+        s.x = info["gate_x"] - 9.144
+        s.y = info["gate_center_y"] + rng.uniform(-0.914, 0.914)
+        s.heading = float(rng.choice([0.0, 90.0, 270.0]))
+        s.z = 0.5
+        s.velocity_x = s.velocity_y = s.velocity_z = s.angular_velocity_z = 0.0
+        self.readings, self.detections = self.core.read_sensors(0.0), self.core.detect(0.0)
+        passes = len(self.core.passes)
+        b.reset()
+        detector.reset()
+        side = 1 if self.lane == "left" else -1   # Going out, relative is the course's side
+        lo, hi = ((d - DEPTH_MIN) / (DEPTH_MAX - DEPTH_MIN) * 2 - 1 for d in GATE_DEPTH_LIMITS_M)
+        action = np.zeros(3, dtype=np.float32)
+        min_depth, max_depth = self.MIN_TARGET_DEPTH_M, self.MAX_TARGET_DEPTH_M
+        self.MIN_TARGET_DEPTH_M, self.MAX_TARGET_DEPTH_M = GATE_DEPTH_LIMITS_M
+        try:
+            for _ in range(int(2 * LEAD_IN_MAX_S / self.control_period)):
+                r = self.readings
+                obs = b.update(r.depth, r.depth_rate, r.heading, r.pitch, r.imu.gyro_y, r.imu.gyro_z,
+                               self.detections, side, action, self.control_period)
+                if detector.update(obs, r.heading):
+                    new = [(p.line, p.direction, p.lane) for p in self.core.passes[passes:]]
+                    return new == [("gate", 1, self.lane)]
+                action = np.clip(model.predict(norm.normalize_obs(obs), deterministic=True)[0], -1.0, 1.0)
+                action[1] = np.clip(action[1], lo, hi)
+                if not self._drive(action):
+                    return False
+            return False
+        finally:
+            self.MIN_TARGET_DEPTH_M, self.MAX_TARGET_DEPTH_M = min_depth, max_depth
 
     def _fly_turnaround(self) -> bool:
         """After a whole-slalom lead-in: the turnaround skill, keeping the slalom's tracks (as the runner does),

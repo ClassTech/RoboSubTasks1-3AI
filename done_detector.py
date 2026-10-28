@@ -35,7 +35,7 @@ import numpy as np
 TURNED_SCALE_DEG = 360.0
 SINCE_SCALE_S = 10.0
 TRAVEL_SCALE_M = 3.0
-TOP_SPEED_MPS = 0.34    # Full surge, for the rough distance driven
+TOP_SPEED_MPS = 0.51    # Full surge, for the rough distance driven
 DT_S = 0.1
 
 

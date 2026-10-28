@@ -30,10 +30,11 @@ class Submarine:
 
        # --- Vertical (Z/Pitch) Gains (TUNE ME) ---
         # --- Adjusted P and I gains ---
-        # Retuned for the measured thrust and drag; see controller.ControllerGains
-        self.DEPTH_P_GAIN = 9.0
-        self.DEPTH_I_GAIN = 0.1
-        self.DEPTH_D_GAIN = 3.0
+        # The same as the policy's controller (tuned for the measured thrust and drag)
+        g = ControllerGains()
+        self.DEPTH_P_GAIN = g.depth_p
+        self.DEPTH_I_GAIN = g.depth_i
+        self.DEPTH_D_GAIN = g.depth_d
         
         # Integrals
         self.integral_x_err = 0.0

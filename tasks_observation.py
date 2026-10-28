@@ -61,7 +61,7 @@ GATE_CONFIRM_FRAMES = 2   # The whole gate and its passages need both poles in t
                           # 66% seen); a phantom gate would need a false red and black box stacked end to end
 WIDTH_SCALE = 30.0   # deg, lane width cue
 SET_JUMP_M = 2.0
-TOP_SPEED_MPS = 0.34   # Full surge, in the sim (the real sub's speed isn't measured yet): scales the dead reckoning
+TOP_SPEED_MPS = 0.51   # Full surge, in the sim (the real sub's speed isn't measured yet): scales the dead reckoning
 TRAVEL_SCALE_M = 3.0     # Half the 4 m between slalom sets: a set this much farther than the tracked one is the next
 
 OWN_FIELDS = ["depth", "depth_rate", "sin_heading", "cos_heading", "pitch", "pitch_rate", "yaw_rate"]
