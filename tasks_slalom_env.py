@@ -50,8 +50,9 @@ HOLD_S = 3.0          # The episode carries on this long after the finish (CLEAR
                       # failures were the sub turning back across the set it had just passed
 LANE_HALF_M = 1.524 / 2
 TARGET_DEPTH_M = 1.25
-LEAD_IN_POLICY = "runs/tslalom14_noisy_s14/best_model.zip"   # With its done detector beside it
+LEAD_IN_POLICY = "runs/tslalom15_back_s17/best_model.zip"   # With its done detector beside it
 LEAD_IN_MAX_S = 40.0
+TURNAROUND_LEAD_IN_POLICY = "runs/tturn6_ft_s9/best_model.zip"   # With its done detector beside it
 
 
 @dataclass
@@ -75,6 +76,11 @@ class TasksSlalomStarts:
                                           # coming back, facing it, near the lane's line
     back_start_distance_m: tuple = (2.5, 3.5)
     back_start_lateral_m: tuple = (-0.5, 0.5)
+    back_lead_in_share: float = 0.0       # Training: of the back starts, first fly the whole slalom out and the
+                                          # turnaround skill (TURNAROUND_LEAD_IN_POLICY), handing over where its
+                                          # detector fires, moving, as in the mission. From the placed starts the
+                                          # mission's slalom went back through set 3 and straight across it again
+                                          # (6 of 16 slalom failures in 180 missions)
     blind_share: float = 0.0              # Of the rest (per-set skill only, unused now): the slalom skill flies in from 2-3 m until the set leaves
                                           # the view (within 2.5 m), and the episode starts there, moving, with the
                                           # memory and dead reckoning it had: the blind crossing, where the
@@ -125,7 +131,7 @@ class TasksSlalomEnv(SubTaskEnv):
         s, st, info = self.core.state, self.starts, self.core.course.info
         turnaround = self.turnaround = rng.random() < st.turnaround_share
         handoff = not turnaround and rng.random() < st.gate_handoff_share
-        back = not turnaround and not handoff and rng.random() < st.back_start_share
+        back = self.back = not turnaround and not handoff and rng.random() < st.back_start_share
         self.set_index = 2 if turnaround or back else 0 if handoff else rng.randrange(3)
         self.direction = -1 if turnaround or back else 1 if handoff else rng.choice((1, -1))
         self.side = self.fixed_side or rng.choice((1, -1))
@@ -168,7 +174,11 @@ class TasksSlalomEnv(SubTaskEnv):
         if type(self) is not TasksSlalomEnv or self.turnaround:
             return obs, info
         before = self.set_index - self.direction
-        if self.np_random.random() < self.starts.blind_share:
+        if self.back and self.np_random.random() < self.starts.back_lead_in_share:
+            if self._fly_slalom(2, 1, self.lane, whole=True) and self._fly_turnaround():
+                self.builder.reset()   # The slalom step back starts with a fresh observation, as in the mission
+                obs = self._start_after_lead_in()
+        elif self.np_random.random() < self.starts.blind_share:
             if self._fly_slalom(self.set_index, self.direction, self.lane, until_blind=True):
                 obs = self._start_after_lead_in(keep_observation=True)
         elif (0 <= before <= 2 and self.np_random.random() < self.starts.lead_in_share
@@ -184,6 +194,31 @@ class TasksSlalomEnv(SubTaskEnv):
             model, norm = load_policy(LEAD_IN_POLICY)
             self._lead_in_parts = (model, norm, DoneDetector(detector_path(LEAD_IN_POLICY)))
         return self._lead_in_parts
+
+    def _fly_turnaround(self) -> bool:
+        """After a whole-slalom lead-in: the turnaround skill, keeping the slalom's tracks (as the runner does),
+        until its done detector fires. True if it crossed nothing on the way."""
+        from collections import deque
+        if not hasattr(self, "_turnaround_parts"):
+            from done_detector import DoneDetector, detector_path
+            from gate_controllers import load_policy
+            model, norm = load_policy(TURNAROUND_LEAD_IN_POLICY)
+            self._turnaround_parts = (model, norm, DoneDetector(detector_path(TURNAROUND_LEAD_IN_POLICY)))
+        model, norm, detector = self._turnaround_parts
+        b, passes = self.builder, len(self.core.passes)
+        b.start_heading, b.frames = None, deque(maxlen=b.stack)
+        detector.reset()
+        action = np.zeros(3, dtype=np.float32)
+        for _ in range(int(LEAD_IN_MAX_S / self.control_period)):
+            r = self.readings
+            obs = b.update(r.depth, r.depth_rate, r.heading, r.pitch, r.imu.gyro_y, r.imu.gyro_z,
+                           self.detections, self.side, action, self.control_period)
+            if detector.update(obs, r.heading):
+                return len(self.core.passes) == passes
+            action = np.clip(model.predict(norm.normalize_obs(obs), deterministic=True)[0], -1.0, 1.0)
+            if not self._drive(action):
+                return False
+        return False
 
     def _drive(self, action) -> bool:
         """One control period toward the action's setpoints, without this skill's scoring. False on a collision."""

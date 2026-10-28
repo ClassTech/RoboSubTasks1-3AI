@@ -66,6 +66,9 @@ def env_kwargs(task: str, args, scoring: bool = False) -> dict:
     if task == "tasks_turnaround" and not scoring and args.scramble_starts:
         from tasks_turnaround_env import TurnaroundStarts
         return {"starts": TurnaroundStarts(scramble_share=args.scramble_starts), **randomize}
+    if task == "tasks_slalom" and not scoring and args.back_lead_ins:
+        from tasks_slalom_env import TasksSlalomStarts
+        return {"starts": TasksSlalomStarts(back_lead_in_share=args.back_lead_ins), **randomize}
     return randomize
 
 
@@ -230,6 +233,8 @@ def main():
                              "so it starts out of view and has to be found")
     parser.add_argument("--scramble-starts", type=float, default=0.0,
                         help="Turnaround training only: share of starts whose white poles' stale range details are redrawn")
+    parser.add_argument("--back-lead-ins", type=float, default=0.0,
+                        help="Slalom training only: share of back starts flown in through the whole slalom and the turnaround")
     parser.add_argument("--log-std-init", type=float, default=0.0,
                         help="Starting exploration spread, as a log (0 = spread 1). The dance needs less: with a "
                              "spread of 1 on the turn (+-45 deg) the sub never held a stop still long enough to count")
