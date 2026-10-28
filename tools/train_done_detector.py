@@ -41,8 +41,14 @@ THRESHOLDS = (0.5, 0.7, 0.9, 0.97)
 CONFIRMS = (1, 3, 5, 10)
 
 
-def make_env(task: str, handoffs: dict, randomize: bool):
-    if task.startswith("tasks_"):
+def make_env(task: str, handoffs: dict, randomize: bool, mission_start: bool = False):
+    if task == "tasks_gate" and mission_start:
+        import envs   # The learned mission's own start (RoboSim's), going out
+        from tasks_gate_env import TasksGateStarts
+        starts = TasksGateStarts(return_share=0.0, forward_distance_m=(9.144, 9.144), lateral_m=(-0.914, 0.914),
+                                 course_heading_share=1.0, depth_m=(0.5, 0.5))
+        env = envs.make(task, "noisy", starts=starts, randomize=randomize)
+    elif task.startswith("tasks_"):
         import envs   # The tasks skills' own training starts (the slalom's include the gate's handoff)
         env = envs.make(task, "noisy", randomize=randomize)
     elif task == "gate":
@@ -70,13 +76,14 @@ def history_fields(task: str):
 
 
 def collect(job):
-    task, policy, handoffs, seeds = job
+    task, policy, handoffs, seeds, mission_share = job
     from done_detector import History
     from gate_controllers import load_policy
     model, norm = load_policy(policy)
     episodes = []
     for seed in seeds:
-        env = make_env(task, handoffs, randomize=seed % 2 == 1)
+        env = make_env(task, handoffs, randomize=seed % 2 == 1,
+                       mission_start=(seed // 2) % 100 < 100 * mission_share)
         obs, _ = env.reset(seed=seed)
         rows, turned, labels, before, onset = [], [], [], [], None
         # Practice starts begin partway around the marker, facing it, so the heading has
@@ -163,6 +170,10 @@ def main():
     parser.add_argument("--epochs", type=int, default=60)
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--handoffs", default="runs/handoffs.json")
+    parser.add_argument("--mission-starts", type=float, default=0.0,
+                        help="tasks_gate: share of episodes from the mission's own start, going out. From there the gate "
+                             "skill can glimpse its passage far off and drift for a while, and a detector trained on the "
+                             "training starts fired during the drift (~4%%)")
     parser.add_argument("--threshold", type=float, default=0.5, help="Probability above which a step counts as done")
     parser.add_argument("--confirm", type=int, default=1, help="Steps in a row above the threshold before it fires")
     parser.add_argument("--before-weight", type=float, default=1.0,
@@ -174,7 +185,7 @@ def main():
     from gate_controllers import load_policy
     handoffs = json.load(open(args.handoffs)) if os.path.exists(args.handoffs) else {}
     seeds = list(range(args.seed, args.seed + args.episodes))
-    jobs = [(args.task, args.policy, handoffs, seeds[i::args.workers]) for i in range(args.workers)]
+    jobs = [(args.task, args.policy, handoffs, seeds[i::args.workers], args.mission_starts) for i in range(args.workers)]
     with Pool(args.workers) as pool:
         episodes = [e for part in pool.map(collect, jobs) for e in part]
     finished = sum(e[3] is not None for e in episodes)
