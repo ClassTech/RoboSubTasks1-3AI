@@ -52,7 +52,7 @@ LANE_HALF_M = 1.524 / 2
 TARGET_DEPTH_M = 1.25
 LEAD_IN_POLICY = "runs/tslalom18_785_s23/best_model.zip"   # With its done detector beside it
 LEAD_IN_MAX_S = 40.0
-GATE_LEAD_IN_POLICY = "runs/tgate4_785_s20/best_model.zip"   # With its done detector beside it
+GATE_LEAD_IN_POLICY = "runs/tgate5_785_s25/best_model.zip"   # With its done detector beside it
 GATE_DEPTH_LIMITS_M = (1.25, 1.65)   # The mission's limits on the gate skill's depth (tasks_mission.DEPTH_LIMITS)
 TURNAROUND_LEAD_IN_POLICY = "runs/tturn8_785_s22/best_model.zip"   # With its done detector beside it
 
