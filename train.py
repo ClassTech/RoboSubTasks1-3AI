@@ -63,6 +63,9 @@ def env_kwargs(task: str, args, scoring: bool = False) -> dict:
     if task == "orbit":
         return {"margin_rule": "soft" if scoring else args.margin_rule, "practice_starts": not scoring,
                 **randomize, **recorded}
+    if task == "tasks_gate" and not scoring and args.gate_handoffs:
+        from tasks_gate_env import TasksGateStarts
+        return {"starts": TasksGateStarts(handoff_share=args.gate_handoffs), **randomize}
     if task == "tasks_turnaround" and not scoring and args.scramble_starts:
         from tasks_turnaround_env import TurnaroundStarts
         return {"starts": TurnaroundStarts(scramble_share=args.scramble_starts), **randomize}
@@ -236,6 +239,9 @@ def main():
                         help="Turnaround training only: share of starts whose white poles' stale range details are redrawn")
     parser.add_argument("--back-lead-ins", type=float, default=0.0,
                         help="Slalom training only: share of back starts flown in through the whole slalom and the turnaround")
+    parser.add_argument("--gate-handoffs", type=float, default=0.0,
+                        help="Tasks gate, training only: share of return starts placed as the slalom hands over "
+                             "(just past set 1, near the lane's line, moving)")
     parser.add_argument("--gate-lead-ins", type=float, default=0.0,
                         help="Slalom training only: share of gate-handoff starts flown in by the gate skill from RoboSim's start")
     parser.add_argument("--log-std-init", type=float, default=0.0,

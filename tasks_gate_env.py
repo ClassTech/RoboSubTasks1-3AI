@@ -56,6 +56,12 @@ class TasksGateStarts:
     course_heading_share: float = 0.5     # Of forward starts: RoboSim's start headings (0, 90, 270 deg)
     any_heading_share: float = 0.3        # Of return starts: any heading; the rest within 30 deg of facing back
     depth_m: tuple = (0.5, 1.5)
+    handoff_share: float = 0.0            # Of return starts: as the slalom hands over in the mission, just past
+                                          # set 1 (~6 m out), near the lane's line, facing back within 20 deg and
+                                          # already moving (the others start at rest)
+    handoff_distance_m: tuple = (5.5, 7.0)
+    handoff_lateral_m: tuple = (-0.4, 0.4)   # From the commanded passage's center line
+    handoff_speed_mps: tuple = (0.2, 0.5)
 
 
 @dataclass
@@ -114,6 +120,13 @@ class TasksGateEnv(SubTaskEnv):
         # its right coming back
         self.lane = "left" if (self.side > 0) == (self.direction > 0) else "right"
         self.lane_y = cy + (PASSAGE_HALF_M if self.lane == "left" else -PASSAGE_HALF_M)
+        if self.direction < 0 and rng.random() < st.handoff_share:
+            s.x = gx + rng.uniform(*st.handoff_distance_m)
+            s.y = self.lane_y + rng.uniform(*st.handoff_lateral_m)
+            s.heading = (180.0 + rng.uniform(-20.0, 20.0)) % 360
+            s.z = rng.uniform(1.0, 1.45)   # The slalom's depth limits
+            v, h = rng.uniform(*st.handoff_speed_mps), math.radians(s.heading)
+            s.velocity_x, s.velocity_y = v * math.cos(h), v * math.sin(h)
 
     def _on_reset(self):
         self.passed, self._at_pass, self._passes_seen = False, None, 0

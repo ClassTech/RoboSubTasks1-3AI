@@ -95,7 +95,7 @@ class TasksMissionEnv(SubTaskEnv):
 
 
 GATE_POLICY = "runs/tgate4_785_s20/best_model.zip"
-SLALOM_POLICY = "runs/tslalom17_785_s21/best_model.zip"
+SLALOM_POLICY = "runs/tslalom18_785_s23/best_model.zip"
 TURNAROUND_POLICY = "runs/tturn8_785_s22/best_model.zip"
 OUT, BACK = 1, -1      # The side relative to the side chosen at the gate: the same, or (coming back) the other
 PLAN = [("gate", OUT), ("slalom", OUT), ("turnaround", BACK), ("slalom", BACK), ("gate", BACK)]
