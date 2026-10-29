@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Simulated versions of the real sub's sensors: pressure (depth), magnetometer
-(heading) and IMU (pitch, rates, acceleration). Pure math (no pygame) so it can
+(heading) and IMU (pitch, roll, rates, acceleration). Pure math (no pygame) so it can
 be shared by the graphical simulator and a headless training environment.
 
 Each reset() draws new per-episode errors (offsets and biases), so a policy
@@ -24,6 +24,7 @@ class SensorReadings:
     heading: float        # deg [0, 360), from the magnetometer
     pitch: float          # deg, from the IMU
     imu: MPU6050Readings  # Rates (rad/s) and accelerations (m/s^2), with noise
+    roll: float = 0.0     # deg, positive = right side down, from the IMU
 
 
 class SensorModel:
@@ -38,6 +39,10 @@ class SensorModel:
         self.heading_offset = r.uniform(*n.headingOffsetRange)
         self.gyro_bias_z = r.uniform(*n.gyroBiasRange)
         self.gyro_bias_y = r.uniform(*n.gyroBiasRange)
+        # Roll's noise comes from its own generator, seeded from this episode's draws, so adding roll left
+        # every other reading (and so every earlier score) exactly as it was
+        self.roll_rng = random.Random(self.heading_offset)
+        self.gyro_bias_x = self.roll_rng.uniform(*n.gyroBiasRange)
         self._depth_est: Optional[float] = None
         self._depth_rate_est = 0.0
 
@@ -62,6 +67,7 @@ class SensorModel:
             accel_z=true_imu.accel_z + r.gauss(0.0, n.accelNoiseStd),
             gyro_z=true_imu.gyro_z + self.gyro_bias_z + r.gauss(0.0, n.gyroNoiseStd),
             gyro_y=true_imu.gyro_y + self.gyro_bias_y + r.gauss(0.0, n.gyroNoiseStd),
+            gyro_x=true_imu.gyro_x + self.gyro_bias_x + self.roll_rng.gauss(0.0, n.gyroNoiseStd),
         )
         return SensorReadings(
             depth=raw_depth,
@@ -69,4 +75,5 @@ class SensorModel:
             heading=(state.heading + self.heading_offset + r.gauss(0.0, n.headingNoiseStd)) % 360,
             pitch=state.pitch + r.gauss(0.0, n.pitchNoiseStd),
             imu=imu,
+            roll=state.roll + self.roll_rng.gauss(0.0, n.rollNoiseStd),
         )

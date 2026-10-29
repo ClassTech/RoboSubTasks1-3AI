@@ -63,6 +63,13 @@ class SimulationConfig:
     angularDragCoeff_Z: float = 1.4  # Yaw
     angularDragCoeff_Y: float = 1.4  # Pitch
     pitchRightingMoment: float = 2.0 # N m per radian of pitch: weight below buoyancy keeps it level
+    # Roll (2026-10-29; nothing measured yet). The sub is statically stable in roll (user); these copy pitch's
+    # estimates, the frame being about square. GUESSES: the righting moment most of all (the dance environment
+    # varies it). The side vertical pair rolls it: ~3.6 N m at full and opposite thrust, against at most
+    # 2.0 N m of righting (at 90 deg), so it can roll all the way over.
+    subInertia_X: float = 0.09       # Roll (kg m^2)
+    angularDragCoeff_X: float = 1.4  # Roll
+    rollRightingMoment: float = 2.0  # N m per radian of roll
     
     # Buoyancy
     gravity: float = 9.81
@@ -83,6 +90,7 @@ class SensorNoiseConfig:
     headingNoiseStd: float = 0.5            # Magnetometer heading noise (deg)
     headingOffsetRange: Tuple[float, float] = (-15.0, 15.0) # Pool steel distortion (deg)
     pitchNoiseStd: float = 0.2              # IMU pitch noise (deg)
+    rollNoiseStd: float = 0.2               # IMU roll noise (deg); assumed as pitch
     gyroNoiseStd: float = 0.005             # Gyro noise (rad/s)
     gyroBiasRange: Tuple[float, float] = (-0.005, 0.005)    # Gyro bias (rad/s)
     accelNoiseStd: float = 0.05             # Accelerometer noise (m/s^2)

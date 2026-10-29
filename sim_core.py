@@ -138,10 +138,12 @@ class SubSim:
         cos_45 = 0.7071
         thrust_surge = (f_hfl + f_hfr + f_hal + f_har) * cos_45
         thrust_sway = (-f_hfl + f_hfr + f_hal - f_har) * cos_45
-        thrust_heave = f_vl + f_vr   # The vertical pair is on the sides: no pitch torque (roll isn't modeled)
+        thrust_heave = f_vl + f_vr   # The vertical pair is on the sides: no pitch torque...
+        thrust_roll = (f_vr - f_vl) * c.thrusterArm   # ...but pushing apart they roll it (positive: right side down)
         thrust_yaw = (-f_hfl + f_hfr - f_hal + f_har) * self.yaw_lever_arm
         # Pitch is passive: weight below buoyancy rights the sub (it drives flat)
         righting_pitch = -c.pitchRightingMoment * math.sin(math.radians(s.pitch))
+        righting_roll = -c.rollRightingMoment * math.sin(math.radians(s.roll))   # Statically stable in roll too
 
         h_rad, p_rad = math.radians(s.heading), math.radians(s.pitch)
         cos_h, sin_h = math.cos(h_rad), math.sin(h_rad)
@@ -149,15 +151,21 @@ class SubSim:
         vel_surge = s.velocity_x * cos_h + s.velocity_y * sin_h
         vel_sway = -s.velocity_x * sin_h + s.velocity_y * cos_h
         vel_heave = s.velocity_z
+        # Rolled, the body's sway and heave axes turn about the forward one (right side down: the body's
+        # down tilts toward the left, its left toward up). Level, cos 1 and sin 0 leave everything as it was.
+        cos_r, sin_r = math.cos(math.radians(s.roll)), math.sin(math.radians(s.roll))
+        vel_sway, vel_heave = vel_sway * cos_r - vel_heave * sin_r, vel_sway * sin_r + vel_heave * cos_r
         drag_surge = -c.surgeDragCoeff * vel_surge * abs(vel_surge)
         drag_sway = -c.swayDragCoeff * vel_sway * abs(vel_sway)
         drag_heave = -c.heaveDragCoeff * vel_heave * abs(vel_heave)
         drag_yaw = -c.angularDragCoeff_Z * s.angular_velocity_z ** 2 * np.sign(s.angular_velocity_z)
         drag_pitch = -c.angularDragCoeff_Y * s.angular_velocity_y ** 2 * np.sign(s.angular_velocity_y)
+        drag_roll = -c.angularDragCoeff_X * s.angular_velocity_x ** 2 * np.sign(s.angular_velocity_x)
 
         force_surge = thrust_surge + drag_surge
         force_sway = thrust_sway + drag_sway
         force_heave = thrust_heave + drag_heave
+        force_sway, force_heave = force_heave * sin_r + force_sway * cos_r, force_heave * cos_r - force_sway * sin_r
         f_x_pitched = force_surge * cos_p - force_heave * sin_p
         f_z_pitched = force_surge * sin_p + force_heave * cos_p
         ax = (f_x_pitched * cos_h - force_sway * sin_h) / c.subMass
@@ -169,12 +177,14 @@ class SubSim:
         s.velocity_z += az * dt
         s.angular_velocity_z += (thrust_yaw + drag_yaw) / c.subInertia_Z * dt
         s.angular_velocity_y += (righting_pitch + drag_pitch) / c.subInertia_Y * dt
+        s.angular_velocity_x += (thrust_roll + righting_roll + drag_roll) / c.subInertia_X * dt
         self.true_imu = MPU6050Readings(
             accel_x=-ax * sin_h + ay * cos_h,   # Sway
             accel_y=ax * cos_h + ay * sin_h,    # Surge
             accel_z=az,                         # Heave
             gyro_z=s.angular_velocity_z,
-            gyro_y=s.angular_velocity_y)
+            gyro_y=s.angular_velocity_y,
+            gyro_x=s.angular_velocity_x)
 
         prev = (s.x, s.y, s.z, s.heading, s.pitch)
         s.x += s.velocity_x * dt
@@ -182,6 +192,7 @@ class SubSim:
         s.z += s.velocity_z * dt
         s.heading = (s.heading + math.degrees(s.angular_velocity_z * dt)) % 360
         s.pitch = float(np.clip(s.pitch + math.degrees(s.angular_velocity_y * dt), -90, 90))
+        s.roll = (s.roll + math.degrees(s.angular_velocity_x * dt) + 180.0) % 360 - 180.0
         margin = 0.5
         s.x = float(np.clip(s.x, margin, c.worldWidth - margin))
         s.y = float(np.clip(s.y, margin, c.worldHeight - margin))
@@ -221,5 +232,5 @@ class SubSim:
                 self.log(f"Collision with {hit.name} at x={s.x:.2f}, y={s.y:.2f}, z={s.z:.2f}")
             s.x, s.y, s.z, s.heading, s.pitch = prev
             s.velocity_x = s.velocity_y = s.velocity_z = 0.0
-            s.angular_velocity_z = s.angular_velocity_y = 0.0
+            s.angular_velocity_z = s.angular_velocity_y = s.angular_velocity_x = 0.0
         self.last_collision = hit

@@ -20,8 +20,8 @@ class Submarine:
         
         # --- Horizontal (XY) Gains ---
         self.ALIGN_YAW_P_GAIN = 0.6
-        self.YAW_D_GAIN = 4.0 
-        self.HOVER_YAW_P_GAIN = 0.1
+        self.YAW_D_GAIN = ControllerGains().yaw_d           # The policy's controller's (tuned for the measured thrust)
+        self.HOVER_YAW_P_GAIN = ControllerGains().heading_p
         self.HOVER_XY_P_GAIN = 1.0
         self.HOVER_XY_I_GAIN = 0.0 
         self.HOVER_XY_D_GAIN = 4.0
