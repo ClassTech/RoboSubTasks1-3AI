@@ -41,13 +41,18 @@ THRESHOLDS = (0.5, 0.7, 0.9, 0.97)
 CONFIRMS = (1, 3, 5, 10)
 
 
-def make_env(task: str, handoffs: dict, randomize: bool, mission_start: bool = False):
+def make_env(task: str, handoffs: dict, randomize: bool, mission_start: bool = False, lead_ins: float = 0.0):
     if task == "tasks_gate" and mission_start:
         import envs   # The learned mission's own start (RoboSim's), going out
         from tasks_gate_env import TasksGateStarts
         starts = TasksGateStarts(return_share=0.0, forward_distance_m=(9.144, 9.144), lateral_m=(-0.914, 0.914),
                                  course_heading_share=1.0, depth_m=(0.5, 0.5))
         env = envs.make(task, "noisy", starts=starts, randomize=randomize)
+    elif task == "tasks_slalom" and lead_ins:
+        import envs   # Handoffs flown in by the gate skill (out) and the slalom and turnaround (back), as in the mission
+        from tasks_slalom_env import TasksSlalomStarts
+        env = envs.make(task, "noisy", starts=TasksSlalomStarts(back_lead_in_share=lead_ins, gate_lead_in_share=lead_ins),
+                        randomize=randomize)
     elif task.startswith("tasks_"):
         import envs   # The tasks skills' own training starts (the slalom's include the gate's handoff)
         env = envs.make(task, "noisy", randomize=randomize)
@@ -76,14 +81,14 @@ def history_fields(task: str):
 
 
 def collect(job):
-    task, policy, handoffs, seeds, mission_share = job
+    task, policy, handoffs, seeds, mission_share, lead_ins = job
     from done_detector import History
     from gate_controllers import load_policy
     model, norm = load_policy(policy)
     episodes = []
     for seed in seeds:
         env = make_env(task, handoffs, randomize=seed % 2 == 1,
-                       mission_start=(seed // 2) % 100 < 100 * mission_share)
+                       mission_start=(seed // 2) % 100 < 100 * mission_share, lead_ins=lead_ins)
         obs, _ = env.reset(seed=seed)
         rows, turned, labels, before, onset = [], [], [], [], None
         # Practice starts begin partway around the marker, facing it, so the heading has
@@ -176,6 +181,9 @@ def main():
                              "training starts fired during the drift (~4%%)")
     parser.add_argument("--threshold", type=float, default=0.5, help="Probability above which a step counts as done")
     parser.add_argument("--confirm", type=int, default=1, help="Steps in a row above the threshold before it fires")
+    parser.add_argument("--lead-ins", type=float, default=0.0,
+                        help="tasks_slalom: share of gate-handoff and back starts flown in by the skills before, "
+                             "as in the mission (the default starts are placed)")
     parser.add_argument("--before-weight", type=float, default=1.0,
                         help="Weight of the moments before the pass (tasks gate and slalom). Firing before the set "
                              "breaks the mission (the next slalom step goes through the same set), firing late doesn't")
@@ -185,7 +193,8 @@ def main():
     from gate_controllers import load_policy
     handoffs = json.load(open(args.handoffs)) if os.path.exists(args.handoffs) else {}
     seeds = list(range(args.seed, args.seed + args.episodes))
-    jobs = [(args.task, args.policy, handoffs, seeds[i::args.workers], args.mission_starts) for i in range(args.workers)]
+    jobs = [(args.task, args.policy, handoffs, seeds[i::args.workers], args.mission_starts, args.lead_ins)
+            for i in range(args.workers)]
     with Pool(args.workers) as pool:
         episodes = [e for part in pool.map(collect, jobs) for e in part]
     finished = sum(e[3] is not None for e in episodes)
