@@ -25,6 +25,7 @@ import envs
 from gate_controllers import ScriptedController, make_controller
 from perception import find_gate_pair
 from sim_view import SimView
+from tasks_dance_env import DEPTH_RANGE_M as DANCE_DEPTH_M
 from sub_env import DEPTH_MAX, DEPTH_MIN, HEADING_CHANGE_DEG
 
 
@@ -74,13 +75,18 @@ class Viewer:
             label = "Scripted state" if isinstance(self.controller, ScriptedController) else "Phase"
             lines.append(f"{label}: {self.controller.state_name()}")
         act = self.controller.last_action
-        if act is not None:
+        if act is not None and getattr(self.controller, "dancing", False):
+            lines.append(f"Action: turn {act[0]:+.2f}, depth {DANCE_DEPTH_M[0] + (act[1] + 1) / 2 * (DANCE_DEPTH_M[1] - DANCE_DEPTH_M[0]):.2f} m, "
+                         f"roll {act[2]:+.2f}")
+        elif act is not None:
             depth = DEPTH_MIN + (act[1] + 1) / 2 * (DEPTH_MAX - DEPTH_MIN)
             sway = f", sway {act[3]:+.2f}" if len(act) > 3 else ""
             lines.append(f"Action: turn {HEADING_CHANGE_DEG * act[0]:+5.1f} deg, depth {depth:.2f} m, surge {act[2]:+.2f}{sway}")
         rel_heading = (r.heading - env.builder.start_heading + 180) % 360 - 180 if env.builder.start_heading is not None else 0.0
-        lines += [f"Sub: depth {r.depth:.2f} m, heading {rel_heading:+.0f} deg from start, pitch {r.pitch:+.1f} deg",
+        lines += [f"Sub: depth {r.depth:.2f} m, heading {rel_heading:+.0f} deg from start, pitch {r.pitch:+.1f} deg, roll {r.roll:+.0f} deg",
                   ""]
+        if getattr(env, "dance_judge", None) or getattr(env, "dance_stops", 0):
+            lines.insert(-1, f"Dance: judges counted {env.dance_stops} of 16 stops")
         if env.core.course_kind == "tasks":
             return lines + self._tasks_lines()
         b = env.builder

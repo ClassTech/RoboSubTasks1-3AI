@@ -189,6 +189,11 @@ class TasksMissionRunner:
     def _builder(self, skill):
         return self.builders["gate" if skill == "gate" else "slalom"]
 
+    @property
+    def dancing(self) -> bool:
+        """Flying the dance policy (its actions are turn, depth, roll), not rising after it."""
+        return self._skill() == "dance" and self.settle_start is None
+
     def _skill(self) -> Optional[str]:
         return self.plan[self.step_index][0] if self.step_index < len(self.plan) else None
 
