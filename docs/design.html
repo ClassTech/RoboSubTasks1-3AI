@@ -85,8 +85,8 @@
 <header>
   <div class="kicker">Design document</div>
   <h1>RoboSubTasks1-3AI</h1>
-  <p class="dek">Learned skills, trained in simulation, for the first three RoboSub tasks: through one side of the divided gate, a three-set slalom on the same side, and the whole thing in reverse back to the start. What each piece does, and why it ended up that way.</p>
-  <div class="meta">Updated October 26, 2026 · Douglas Johnson · Lives in the repo at <code>docs/design.html</code>; the step-by-step log is in <code>PLAN.md</code> · Built on RoboSubQualAI, whose design document covers the qualification run</div>
+  <p class="dek">Learned skills, trained in simulation, for the first three RoboSub tasks: through one side of the divided gate, a victory dance, a three-set slalom on the same side, and the whole thing in reverse back to the start. What each piece does, and why it ended up that way.</p>
+  <div class="meta">Updated October 30, 2026 · Douglas Johnson · Lives in the repo at <code>docs/design.html</code>; the step-by-step log is in <code>PLAN.md</code> · Built on RoboSubQualAI, whose design document covers the qualification run</div>
 </header>
 
 <nav class="toc" aria-label="Contents">
@@ -103,23 +103,33 @@
     <li><a href="#training">How training works</a></li>
     <li><a href="#scripted">The scripted mission</a></li>
     <li><a href="#skills">The skills</a></li>
+    <li><a href="#dance">The victory dance</a></li>
     <li><a href="#rewards">Reward weights</a></li>
-    <li><a href="#runner">The mission runner (planned)</a></li>
-    <li><a href="#results">Results so far</a></li>
+    <li><a href="#runner">The mission runner</a></li>
+    <li><a href="#results">Results</a></li>
     <li><a href="#lessons">Lessons and design decisions</a></li>
     <li><a href="#reference">Reference</a></li>
   </ol>
 </nav>
 
 <h2 id="summary">Summary</h2>
-<p class="lede">The sub starts facing any of three directions in front of a gate split down the middle. It must go through one side, slalom through three sets of poles on that same side, turn around, and come back the same way: through the three sets in the same lanes and the gate's same opening.</p>
-<p>A scripted mission, ported from ClassTech's RoboSim, flies it 173 times in 180 fresh starts, in about 180 s. The learned mission uses three skills trained by reinforcement learning (PPO): <strong>gate</strong>, <strong>slalom</strong> (all three sets) and <strong>turnaround</strong>. A runner that only says what to do runs them in five steps. Its best full score so far is <strong>128 of 180 (71%)</strong>, about 184 s, with the slalom as one set per step. The current five-step version scores 87 of 120 (73%) in about 175 s, with the turnaround still being retrained (see <a href="#results">Results</a>). The skills, each judged on its own:</p>
+<p class="lede">The sub starts facing any of three directions in front of a gate split down the middle. It must go through one side, slalom through three sets of poles on that same side, turn around, and come back the same way: through the three sets in the same lanes and the gate's same opening. Right after the gate it can earn style points with a victory dance: a full turn each way, stopping at every quarter, then a full roll each way.</p>
+<p>A scripted mission, ported from ClassTech's RoboSim, is the baseline. The learned mission uses four skills: <strong>gate</strong>, <strong>slalom</strong> (all three sets) and <strong>turnaround</strong>, trained by reinforcement learning (PPO), and the <strong>dance</strong>, trained by imitation. A runner that only says what to do runs them in six steps. On 300 test starts, at the sub's real thrust, without the dance (the scripted mission has none):</p>
 <div class="table-wrap"><table>
-  <thead><tr><th>Skill</th><th>Job</th><th class="num">Success, 100 test starts</th></tr></thead>
+  <thead><tr><th>Mission</th><th class="num">Success, 300 starts</th><th class="num">Time (median)</th></tr></thead>
   <tbody>
-    <tr><td>Gate</td><td>find the gate from any heading, go through the commanded side</td><td class="num">91% (92% varied)</td></tr>
-    <tr><td>Slalom</td><td>every set ahead in the commanded lane, then clear of the last</td><td class="num">76% (all sets in one episode)</td></tr>
-    <tr><td>Turnaround</td><td>after set 3, turn back to face it, far enough off to see the lane</td><td class="num">80% from the whole slalom's handoff (retraining)</td></tr>
+    <tr><td>Scripted</td><td class="num">281 (93.7%)</td><td class="num">~134 s</td></tr>
+    <tr class="hl"><td>Learned</td><td class="num">289 (96.3%)</td><td class="num">~119 s</td></tr>
+  </tbody>
+</table></div>
+<p>With the dance, on another 300 starts, the learned mission succeeds 287 times against 286 without it, in about 224 s, and 234 of the dances (78%) are complete. The dance's points are extra, so a dance cut short doesn't fail the run. The skills, each judged on its own:</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Skill</th><th>Job</th><th class="num">Success on its test starts</th></tr></thead>
+  <tbody>
+    <tr><td>Gate</td><td>find the gate from any heading, go through the commanded side; also the way back</td><td class="num">91% of 100</td></tr>
+    <tr><td>Slalom</td><td>every set ahead in the commanded lane, then clear of the last</td><td class="num">88% of 100</td></tr>
+    <tr><td>Turnaround</td><td>after set 3, turn back to face it, far enough off to see the lane</td><td class="num">90% of 100</td></tr>
+    <tr><td>Dance</td><td>eight quarter turns with 3 s stops, eight quarter rolls, level again</td><td class="num">81% of 225 (14.3 of 16 stops on average)</td></tr>
   </tbody>
 </table></div>
 <p>Everything carries over from the qualification project: the realistic simulator, the sensing and control code, PPO training, and these ideas:</p>
@@ -129,6 +139,7 @@
   <li><strong>Skip the rendering when training.</strong> A simulated detector computes the boxes the camera would see.</li>
   <li><strong>Make the simulation hard on purpose.</strong> Noisy detections, a 0.5 s thruster ramp, and dynamics varied every run.</li>
   <li><strong>The runner says what to do, not how.</strong> It names a skill and a side; each skill decides how, and a learned done detector says when it's finished. No scripted stages or maneuvers live in the runner.</li>
+  <li><strong>When exploring can't find the reward, show it.</strong> PPO alone never got the dance past its first stop; imitating a hand controller that could see the judges' count, it learned the whole dance in a few hours.</li>
 </ol>
 
 <h2 id="big-picture">The big picture</h2>
@@ -170,7 +181,7 @@
     <text class="sub" x="656" y="104" text-anchor="middle">slalom sets, lanes</text>
     <rect class="box" x="576" y="184" width="160" height="72" rx="8"/>
     <text class="name" x="656" y="208" text-anchor="middle">Observation</text>
-    <text class="sub" x="656" y="224" text-anchor="middle">40 (gate) or 31 values</text>
+    <text class="sub" x="656" y="224" text-anchor="middle">15–40 values per frame</text>
     <text class="sub" x="656" y="240" text-anchor="middle">× 4 frames, plus a side</text>
     <rect class="box main" x="392" y="184" width="160" height="72" rx="8"/>
     <text class="name" x="472" y="208" text-anchor="middle">Policy (actor)</text>
@@ -190,7 +201,7 @@
 <p>Two ways fly the course, sharing the physics, sensors, detection, perception and control code, so comparisons are fair:</p>
 <ul>
   <li><strong>The scripted mission</strong> (<code>tasks_mission.py</code>, <code>ai/tasks/course_tasks.py</code>): RoboSim's hand-written tasks, adapted to this sub. It is the baseline.</li>
-  <li><strong>The learned mission</strong> (planned): the gate, slalom and turnaround skills in turn, each until its done detector says it's finished.</li>
+  <li><strong>The learned mission</strong> (<code>TasksMissionRunner</code> in <code>tasks_mission.py</code>): the gate, dance, slalom and turnaround skills in turn, each until it says it's finished.</li>
 </ul>
 
 <h2 id="course">The course</h2>
@@ -206,7 +217,7 @@
     <tr><td>Route</td><td>Through one passage, the three sets on the same side, then back through the same three lanes and the same passage. Eight passes in all, judged on ground truth by <code>TasksMissionEnv</code>.</td></tr>
   </tbody>
 </table></div>
-<p>Two departures from RoboSim. Its top bar ranges 0.6–1.8 m deep; with 1.52 m poles in a 2.1 m pool, a 1.8 m bar leaves 0.3 m above the floor, so here it is 0.6–1.1 m. And RoboSim's victory dance (a spin and a roll after the gate) is deferred.</p>
+<p>Two departures from RoboSim. Its top bar ranges 0.6–1.8 m deep; with 1.52 m poles in a 2.1 m pool, a 1.8 m bar leaves 0.3 m above the floor, so here it is 0.6–1.1 m. RoboSim's victory dance (a spin and a roll after the gate) is flown as its own learned skill; see <a href="#dance">The victory dance</a>.</p>
 <p>Sides are relative to the sub. Going out, "left" is the course's left; coming back, the same physical lane is on the sub's right. Each skill takes the side as an input, so the runner tells it "left" or "right" as the sub sees it.</p>
 
 <h2 id="simulator">The simulator</h2>
@@ -218,23 +229,25 @@
     <tr><td>Footprint</td><td>0.46 × 0.457 m</td><td>measured</td></tr>
     <tr><td>Height</td><td>0.25 m</td><td>measured</td></tr>
     <tr><td>Mass</td><td>4.0 kg, about 1 N buoyant</td><td>assumed</td></tr>
-    <tr><td>Thrusters</td><td>4 horizontal at the corners, each angled 45° across the diagonal; 2 vertical, one on each side (depth only; they can't control pitch)</td><td>measured</td></tr>
+    <tr><td>Thrusters</td><td>4 horizontal at the corners, each angled 45° across the diagonal; 2 vertical, one on each side (together for depth, apart to roll; they can't control pitch)</td><td>measured</td></tr>
     <tr><td>Thruster lever arm</td><td>0.229 m (9")</td><td>measured</td></tr>
-    <tr><td>Thrust</td><td>3.56 N (0.8 lbf) each, the same forward and reverse</td><td>measured</td></tr>
+    <tr><td>Thrust</td><td>7.85 N (0.8 kgf) each, the same forward and reverse</td><td>measured (until October 28 the sim had 0.8 lbf, 3.56 N)</td></tr>
     <tr><td>Thruster ramp</td><td>0.5 s from zero to full and back, set by the sub's software</td><td>measured</td></tr>
     <tr><td>Yaw / pitch inertia</td><td>0.13 / 0.09 kg·m²</td><td>estimated from the layout</td></tr>
     <tr><td>Drag</td><td>quadratic: 60 forward, 70 sideways, 80 vertical (N per (m/s)²); 1.4 in yaw and pitch</td><td>estimated from the frame's parts; the sub is blunt every way</td></tr>
     <tr><td>Pitch</td><td>passive: weight below buoyancy rights it</td><td>observed: it drives flat</td></tr>
-    <tr><td>Resulting speeds</td><td>about 0.34 m/s forward, 0.32 m/s sideways, 87°/s turning; stops within about 0.25 m</td><td>from the above; the real sub's speed hasn't been measured</td></tr>
+    <tr><td>Roll</td><td>passive too; 0.09 kg·m² inertia, drag 1.4, righting 2.0 N·m per radian (copied from pitch). The side pair, full and opposite, gives ~3.6 N·m, enough to roll all the way over</td><td>guesses: statically stable in roll (observed), nothing measured</td></tr>
+    <tr><td>Resulting speeds</td><td>about 0.51 m/s forward, 0.47 m/s sideways</td><td>from the above; the real sub's speed hasn't been measured</td></tr>
   </tbody>
 </table></div>
 <h3>The thrusters</h3>
 <p>Each corner thruster is angled across the diagonal, so it pushes toward the far side and turns the sub away from its own side. The front-left one, running forward, pushes forward and to the right and turns the sub right; the front-right one pushes forward-left and turns it left. The rear pair is the other way round for sliding: rear-left pushes forward-left. Running all four forward cancels the sideways pushes and the turns.</p>
+<p>The two vertical thrusters, one on each side, move the sub up and down together and roll it when pushed apart (right side down is positive roll). On its side, the vertical pair pushes sideways, so the depth loop also uses the corner thrusters, whose sideways push points up or down when the sub is rolled (see <a href="#control">Low-level control</a>).</p>
 <p>Until October 24 the simulator and the mixer had every horizontal thruster mirrored left for right. They agreed with each other, so nothing flew differently (the forces match to 10⁻¹⁵ and the trained gate policy scores the same), but on the real sub the names choose which motor runs.</p>
 <h3>Collisions and passes</h3>
 <p>The sub is a box turned to its heading; every course segment is a line with a radius. On contact the sub returns to its last clear position and stops. Every crossing of a pass line (the gate, each slalom set) is recorded with its direction, its lane (or none, if outside them), and its depth: a lane only counts within the poles' vertical span.</p>
 <h3>Varied dynamics</h3>
-<p>In training each run scales the PID gains and inertia by 0.7–1.3, each drag coefficient by 0.8–1.2 and the thrust by 0.9–1.1. Scored tests use the nominal values unless marked "varied".</p>
+<p>In training each run scales the PID gains and inertia by 0.7–1.3, each drag coefficient by 0.8–1.2 and the thrust by 0.9–1.1. The dance's training also scales the roll righting moment by 0.5–1.5, since it is a guess. Scored tests use the nominal values unless marked "varied".</p>
 
 <h2 id="sensing">Sensing</h2>
 <p>The sub has a forward camera, a pressure sensor and an IMU with a magnetometer; nothing measures its horizontal speed or position.</p>
@@ -243,7 +256,7 @@
   <tbody>
     <tr><td>Pressure → depth</td><td>true depth + 3 mm noise + a zero error of up to ±2 cm per run</td></tr>
     <tr><td>Magnetometer → heading</td><td>true heading + 0.5° noise + an offset of up to ±15° per run (steel in the pool)</td></tr>
-    <tr><td>IMU → pitch, rates</td><td>true values + small noise; gyro bias up to ±0.005 rad/s per run</td></tr>
+    <tr><td>IMU → pitch, roll, rates</td><td>true values + small noise; gyro bias up to ±0.005 rad/s per run</td></tr>
     <tr><td>Camera</td><td>1280×960, 70° across. OpenCV on the rendered image (as on the sub), or the simulated detector, which returns the same boxes without drawing</td></tr>
   </tbody>
 </table></div>
@@ -276,30 +289,32 @@
   <li>Gate poles are tracked by physical identity but shown as left and right the way the sub sees them now.</li>
   <li>Sightings must be confirmed: 3 frames in a row for poles and sets, 2 for the whole gate and its passages. At 3, the gate needed both poles in one frame, and each one-frame dropout cost 4 frames: it was confirmed only 42% of the time it was in view.</li>
   <li>Geometry (turn and offset) is smoothed over about 1 s.</li>
-  <li><strong>Dead reckoning</strong> (slalom and turnaround): metres driven since the red pole was last in view, summed from the sub's own surge commands at the sim's top speed (0.34 m/s; the real sub's hasn't been measured). Close to a set its poles leave the view, and the remembered range doesn't shrink as the sub moves, so before this nothing changed while it crossed blind. With the red's last range, it says how far through the set the sub is. It covers only a few seconds and metres, so its errors stay small. The thruster ramp, currents and sideways drift aren't in it.</li>
+  <li><strong>Dead reckoning</strong> (slalom and turnaround): metres driven since the red pole was last in view, summed from the sub's own surge commands at the sim's top speed (0.51 m/s; the real sub's hasn't been measured). Close to a set its poles leave the view, and the remembered range doesn't shrink as the sub moves, so before this nothing changed while it crossed blind. With the red's last range, it says how far through the set the sub is. It covers only a few seconds and metres, so its errors stay small. The thruster ramp, currents and sideways drift aren't in it.</li>
   <li><strong>Which set:</strong> the slalom's observation describes one set at a time. A set more than 2 m farther than the tracked one is ignored until dead reckoning says the sub has driven past the tracked one. Without this, when the near set's outer white left the view (a set needs a white), the next set, 4 m on, became "the nearest set" and the policy steered for its lane, into the near set's white.</li>
 </ul>
 
 <h2 id="control">Low-level control</h2>
 <p>The control loops (<code>controller.py</code>) are shared by the scripted mission and the policies, and are written to run on the Pi unchanged.</p>
 <ul>
-  <li><strong>Depth:</strong> PID on measured depth (P 9, I 0.1, D 3). The target moves at most 0.5 m/s.</li>
-  <li><strong>Heading:</strong> PD toward the target heading, using the gyro. The target moves at most 30°/s; a policy's turn command is up to ±45° from the current heading.</li>
+  <li><strong>Depth:</strong> PID on measured depth (P 4.5, I 0.05, D 1.0). The target moves at most 0.5 m/s. Retuned at the real thrust, where the old gains (P 9, I 0.1, D 3) rang for about 20 s; a 0.5 m step now settles in about 1.8 s.</li>
+  <li><strong>Heading:</strong> PD toward the target heading, using the gyro (0.1 per degree, 4.0 per rad/s). The target moves at most 30°/s; a policy's turn command is up to ±45° from the current heading. At the real thrust, holding a heading wobbles up to 14°/s; the dance halves both gains (back to about 6°/s, turning as fast). The other skills keep the defaults: on the halved gains, outside their training spread, the mission lost 11 of 180.</li>
   <li><strong>Pitch:</strong> not controlled; the vertical thrusters are on the sides and the sub is stable on its own.</li>
-  <li><strong>Mixer:</strong> forward, sideways, yaw and heave efforts into the six thrusters. The horizontal group is scaled down on its own if any command exceeds 1, so hard turning can't steal vertical thrust.</li>
+  <li><strong>Roll:</strong> open loop. A roll effort pushes the vertical pair apart; with none, the sub rights itself. Roll has first call on the vertical pair: sharing it, a saturated depth loop halved the roll torque and the sub stalled partway round. Rolled past 20°, the depth loop's push is split between the vertical pair (× cos roll) and the corner thrusters' sideways push (× −sin roll); with the vertical pair alone, the buoyant sub rose to the surface during the rolls.</li>
+  <li><strong>Mixer:</strong> forward, sideways, yaw, heave and roll efforts into the six thrusters. The horizontal group is scaled down on its own if any command exceeds 1, so hard turning can't steal vertical thrust.</li>
 </ul>
-<p>Each skill limits its depth targets to keep clear of the course: the gate 1.25–1.65 m (below the top bar, at most 1.1 m deep, and high enough above the floor to range the pole feet), the slalom and turnaround 1.0–1.45 m (within the floating poles' span).</p>
+<p>Each skill limits its depth targets to keep clear of the course: the gate 1.25–1.65 m (below the top bar, at most 1.1 m deep, and high enough above the floor to range the pole feet), the slalom and turnaround 1.0–1.45 m (within the floating poles' span), the dance 1.0–1.8 m (it rolls deep: rolling uses all the vertical thrust and the sub rises about 0.1 m/s).</p>
 <p>One SIM ONLY helper in the scripted tasks damps sideways motion using the simulator's true velocity, which the real sub can't measure. It must turn that velocity by the true heading: turned by the measured one, off up to 15°, it read forward speed as sideways and pushed the sub off its line.</p>
 
 <h2 id="networks">The neural networks</h2>
 <p>Each skill has two small networks, an actor (the policy) and a critic (its estimate of the reward to come), each with two hidden layers of 128 tanh neurons. Only the actors would run on the sub.</p>
-<pre><code>observation (160 or 128) → 128 → tanh → 128 → tanh → action means (3: turn, depth, surge)</code></pre>
+<pre><code>observation (160, 128 or 60) → 128 → tanh → 128 → tanh → action means (3: turn, depth, surge; the dance: turn, depth, roll)</code></pre>
 <div class="table-wrap"><table>
   <thead><tr><th></th><th class="num">Inputs</th><th class="num">Actor parameters</th><th class="num">Critic parameters</th></tr></thead>
   <tbody>
     <tr><td>Gate</td><td class="num">160</td><td class="num">37,510</td><td class="num">37,249</td></tr>
     <tr><td>Slalom</td><td class="num">128</td><td class="num">33,414</td><td class="num">33,153</td></tr>
     <tr><td>Turnaround</td><td class="num">128</td><td class="num">33,414</td><td class="num">33,153</td></tr>
+    <tr><td>Dance</td><td class="num">60</td><td class="num">24,710</td><td class="num">24,449</td></tr>
   </tbody>
 </table></div>
 <p>When the dead-reckoning input was added, the trained slalom and turnaround were carried over rather than retrained (<code>tools/expand_slalom_obs.py</code>): the new input's weights start at zero, so the copy flies exactly as the original (actions within 10⁻⁶), and fine-tuning learns to use it. Trained from scratch on the new observation, the slalom reached only 37–57% in 4M steps.</p>
@@ -324,10 +339,10 @@
     <tr><td>Testing during training</td><td>every 100,000 steps, 30 fixed starts without exploration; the best is kept as <code>best_model.zip</code></td></tr>
   </tbody>
 </table></div>
-<p>TensorBoard (<code>.venv/bin/tensorboard --logdir runs</code>, then http://localhost:6006) shows each run's curves; <code>eval/success_rate</code> is the headline. The training log prints each test's outcomes. The turnaround took about 20 minutes for 2 million steps; the gate and slalom 4 million steps from scratch, then fine-tuning.</p>
+<p>TensorBoard (<code>.venv/bin/tensorboard --logdir runs</code>, then http://localhost:6006) shows each run's curves; <code>eval/success_rate</code> is the headline. The training log prints each test's outcomes. The turnaround took about 20 minutes for 2 million steps; the gate and slalom 4 million steps from scratch, then fine-tuning. When the thrust was corrected (October 28) every skill and done detector was fine-tuned from its best at the old thrust. The dance is trained differently, by imitation (see <a href="#dance">The victory dance</a>).</p>
 
 <h2 id="scripted">The scripted mission</h2>
-<p><code>build_tasks_mission()</code> ports RoboSim's mission: gate, stabilize 3 s, slalom, stabilize 3 s, slalom reversed, gate, hover 10 s, surface. The tasks are in <code>ai/tasks/course_tasks.py</code>. Run it with <code>.venv/bin/python main.py --course tasks --detector noisy</code>.</p>
+<p><code>build_tasks_mission()</code> ports RoboSim's mission: gate, stabilize 3 s, slalom, stabilize 3 s, slalom reversed, gate, hover 10 s, surface. It has no dance. The tasks are in <code>ai/tasks/course_tasks.py</code>. Run it with <code>.venv/bin/python main.py --course tasks --detector noisy</code>.</p>
 <p>The side is chosen at the first sight of the gate: the passage nearer the image center. The learned mission will use the same rule.</p>
 <p>Changes from RoboSim, each found by testing:</p>
 <div class="table-wrap"><table>
@@ -337,7 +352,8 @@
     <tr><td>Losing a target counts as passing it only if it was close</td><td>Noise dropouts ended the gate before reaching it, and the slalom after set 2.</td></tr>
     <tr><td>The slalom finishes after 3 s with no set in view</td><td>It searched on past the last set.</td></tr>
     <tr><td>A set counts as passed when the next one takes its place (the lane narrows by half, 3 frames in a row)</td><td>Passing a set, the sub slid toward the next set's lane. A looser test fired on noise.</td></tr>
-    <tr><td>Fixed 1.3 m depth; timings for 0.34 m/s; the slalom at full thrust</td><td>This sub's speed and the course's depths. Full thrust: 170 → 173 of 180, ~200 → ~180 s.</td></tr>
+    <tr><td>Fixed 1.3 m depth; the slalom at full thrust</td><td>The course's depths. Full thrust: 170 → 173 of 180, ~200 → ~180 s (at the old thrust).</td></tr>
+    <tr><td>Timings for 0.51 m/s; depth gains from the shared controller</td><td>At the real thrust it overshot (133/180, wrong course 31). With its clear timers scaled to the new speed and the retuned depth gains (it had its own copy of the old ones): 171/180, ~134 s.</td></tr>
   </tbody>
 </table></div>
 
@@ -346,14 +362,14 @@
 <h3>Gate (<code>tasks_gate_env.py</code>)</h3>
 <p>Go through the commanded passage and carry on 1.5 m beyond, within 90 s.</p>
 <ul>
-  <li><strong>Starts:</strong> forward, 3–10 m before the gate, half at RoboSim's start headings and half at any heading, so finding the gate is part of the skill; or (40%) the return, 2–7 m past the gate facing back. Up to ±2 m sideways, 0.5–1.5 m deep.</li>
+  <li><strong>Starts:</strong> forward, 3–10 m before the gate, half at RoboSim's start headings and half at any heading, so finding the gate is part of the skill; or (40%) the return. Half the returns start as the slalom hands over: about 6 m out near the lane's line, facing back within 20°, moving 0.2–0.5 m/s; the rest 2–7 m past the gate at rest. Up to ±2 m sideways, 0.5–1.5 m deep. The way back was the gate's weak spot until its starts matched the slalom's handoff.</li>
   <li><strong>No sway.</strong> With it, from scratch, the policies went through crabwise, about 52° off, and hit the divider they couldn't see (19 of 25 collisions). Turned 45°, the square sub is 0.65 m across, in a passage with about 0.5 m to spare each side. A cost on facing changed nothing; taking sway away took the gate from 70% to 90%. Sliding through is legal in competition, but this sub can't see what it slides into.</li>
 </ul>
 <h3>Slalom (<code>tasks_slalom_env.py</code>)</h3>
 <p>Go through every set ahead, in the commanded lane, and carry on 1.5 m beyond the last, within 120 s. The mission runs it once each way.</p>
 <ul>
   <li><strong>One skill for the whole slalom</strong> (the user's call). It began as one set per skill, run three times each way. Then every handoff between sets came from the previous step's done detector: the sub was moving, at whatever moment the detector fired. Single-set training never saw that, and a skill that scored about 90% on one set lost about a quarter of the missions. Now the switch between sets happens inside the skill and gets trained with it.</li>
-  <li><strong>Starts:</strong> 30% as the gate hands over, 5–7.5 m before set 1 going out; 30% as the turnaround hands over, 2.5–3.5 m before set 3 coming back; the rest 1.5–3.5 m before any set, either way. All are near the lane's line and facing the set within 30°.</li>
+  <li><strong>Starts:</strong> 30% as the gate hands over and about 20% as the turnaround hands over, all flown in (<em>lead-ins</em>): the gate skill flies from RoboSim's start, or the slalom and turnaround fly the way out and turn, and the slalom takes over where that step's detector fires, moving, with the memory it really has. The rest start at rest 1.5–3.5 m before any set, near the lane's line and facing it within 30°. Placed starts didn't match the mission: from placed back starts (at rest, lined up) the slalom crossed set 3 and straight back again, and from placed gate starts it recrossed the gate after early handoffs.</li>
   <li><strong>Carries on 3 s past the finish.</strong> The detector can fire a little late, and in the mission half the failures were the sub turning back across a set it had just passed, in seconds training never reached. Crossing back in those 3 s fails.</li>
   <li><strong>Any other line fails</strong>: a set already passed, one out of order, or the gate. It used to be ignored, and with the set just passed 1.5 m behind, the policy's habit of backing up first took it back through that set.</li>
   <li><strong>Backwards fails.</strong> When turnaround starts were part of this skill, a policy learned to reverse blind through set 3, picking a lane by luck. Crossing the set's line facing more than 90° from the way through now fails. Backing through would count in competition, but with one forward camera it is always blind.</li>
@@ -366,6 +382,46 @@
   <li><strong>Done</strong> (ground truth): within 0.75 m of a point 3 m back from the set in front of the commanded lane, facing straight back within 15°, with the red pole and our white pole both in view.</li>
   <li><strong>Going through the set fails</strong>: that's the slalom's job.</li>
 </ul>
+
+<h2 id="dance">The victory dance</h2>
+<p>RoboSim's dance, between the gate and the slalom, scores a point for each 90° turn in any axis and direction. The user asked for it learned, not programmed. It lives in <code>tasks_dance_env.py</code>; the teacher and the imitation training are in <code>tools/imitate_dance.py</code>.</p>
+<h3>What it does, and how it's judged</h3>
+<ol>
+  <li><strong>Yaw:</strong> a full turn clockwise, stopping at each quarter, then a full turn back counterclockwise: eight stops. A stop counts once the sub is within 5° of it and turning slower than 5°/s for 3 s, measured on the true heading from where the dance began (so errors don't add up from stop to stop, and the magnetometer's offset cancels).</li>
+  <li><strong>Roll:</strong> a full roll right (right side down), then a full roll back left: eight quarters, each counted on reaching it within 15°. There's no hold: past about 60° the side thrusters can't hold the sub there, and on its side or upside down they push it sideways while the buoyant sub rises.</li>
+  <li><strong>Level:</strong> the last quarter, level again, held 2 s under 10°/s.</li>
+</ol>
+<p>Judging (<code>DanceJudge</code>) runs every physics step on ground truth, as the judges would see it. The mission env runs the same judge from the moment the runner starts the dance and reports <code>dance_stops</code> (0–16). The dance is extra points: a dance cut short doesn't fail the mission.</p>
+<h3>Actions (<code>DanceDriver</code>), at 10 Hz</h3>
+<ul>
+  <li><strong>Turn</strong> slews a turn target, measured from the dance's starting heading. Past ±0.3 it moves at up to 60°/s; inside, it snaps to a quarter: on to the next one if it has moved more than 15° that way, otherwise back. One push moves it at most a quarter. Jitter averages out and holding a stop is easy; turning on is a deliberate push.</li>
+  <li><strong>Depth,</strong> 1.0–1.8 m: deep before rolling.</li>
+  <li><strong>Roll:</strong> past ±0.4, open-loop roll effort; inside, a small PD on the IMU's roll holds it level.</li>
+</ul>
+<p>No surge: exploring with it shook the sub off its stops (see below). The driver also halves the heading gains, as the dance trained.</p>
+<h3>The observation (<code>DanceObservation</code>, 15 per frame, 4 frames)</h3>
+<p>All measured: depth and depth rate, pitch, yaw rate; heading turned since the dance began and the farthest clockwise so far (−180° on the way out and on the way back look alike without it); the turn target; how long it has held the target, <strong>by its own count</strong> (within 3° and under 3°/s, stricter than the judges' 5° and 5°/s); a <code>stop_done</code> flag, set 0.5 s after its own count passes the judges' 3 s; sin and cos of roll, roll rate, roll since the start and the most so far; time level. No last action, unlike the other skills.</p>
+<h3>Why imitation</h3>
+<p>About 300 CPU-hours of PPO, over nine designs, never got past the first stop. Each design fixed a real problem, found by tracing a run:</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Tried</th><th>What happened</th></tr></thead>
+  <tbody>
+    <tr><td>Turn target anywhere in 440°</td><td>Exploring moved it ±80° a step; a stop needs 5° for 3 s, so none was ever held and there was nothing to learn from.</td></tr>
+    <tr><td>Quarter steps fired by the action crossing ±0.5</td><td>Exploring fired them early in a hold and lost the stop, so the policy learned never to fire.</td></tr>
+    <tr><td>Starts at any stop; "still" counted as the judges count it</td><td>It held the stop it started at and never turned on: turning on pays only just after a stop counts, and early it loses the stop.</td></tr>
+    <tr><td>Slewed target; training on 2-stop pieces</td><td>Training success reached about 40% on the pieces, but the whole dance stayed lost.</td></tr>
+    <tr><td>The cause</td><td>Exploring's noise is a physical shake. The hand controller, with the training noise added to its actions, held only 9 of 30 two-stop pieces (95% clean). Surge was the worst, so it was dropped.</td></tr>
+  </tbody>
+</table></div>
+<p>Imitation (DAgger): a hand controller that can see the judges' count flies first, with noise on its actions so the data has recoveries in it. Then the student flies, with a little noise, and the teacher labels every step, so the student learns to recover from its own mistakes. After each round the policy's mean action is fitted to the teacher's on everything so far. Eight rounds took about 2.5 hours.</p>
+<p>Fixes on the way, each from a trace of the student:</p>
+<ul>
+  <li><strong>No contradictory labels.</strong> The teacher moved on the moment the judges counted a stop, a step or two before the student could tell; the same observation got "hold" and "push", and the student pushed at half strength. The <code>stop_done</code> flag, and a teacher that waits for it, fixed that (to 40%).</li>
+  <li><strong>The policy's own count stricter than the judges'.</strong> The judges see rate spikes between the 10 Hz gyro readings, so a quarter of the holds the student counted weren't theirs, and it moved on too early. Counting at 3° and 3°/s: 40% → 78%.</li>
+  <li><strong>No copying itself.</strong> With its own last action in the observation, the student copied it, and flew into states it never trained on.</li>
+  <li><strong>Commit and stop.</strong> A push past 15° commits to the next quarter (half-strength pushes kept snapping back), and one push moves at most a quarter (pushes ran through stops).</li>
+</ul>
+<p>PPO fine-tuning from the imitated policy (two learning rates, 3M steps) didn't improve it: on 225 fresh starts, 77% and 65% against the imitated policy's 81%. <strong>The dance is <code>tdance_bc8</code></strong>: 81% of 225 dances, 14.3 of 16 stops on average, about 101 s. Failures: about 10% lost (the sub's own count went on past a stop the judges didn't count) and 10% out of time (the 120 s limit).</p>
 
 <h2 id="rewards">Reward weights</h2>
 <p>The reward is the only way to tell a policy what matters, and policies find every loophole: "you get what you ask for". Every weight below either encourages a behavior or closes a loophole a policy found.</p>
@@ -423,13 +479,27 @@
     <tr><td>Missed</td><td class="num">−5</td><td>Crossing the set's line: going through is the slalom's job.</td></tr>
   </tbody>
 </table></div>
+<h3>Dance</h3>
+<p>Used by the PPO attempts and the fine-tune. The dance that flies was taught by imitation, but its score (14.3 of 16 stops) is what this reward measures.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Term</th><th class="num">Weight</th><th>What it does, and why</th></tr></thead>
+  <tbody>
+    <tr><td>Stops</td><td class="num">3 each</td><td>Each stop or quarter done; then −1 per 90° from the next one, plus 1 × the fraction of its hold done.</td></tr>
+    <tr><td>Off axis</td><td class="num">1 / 90°</td><td>Roll during the yaw part, and heading off the start during the roll part.</td></tr>
+    <tr><td>Depth error</td><td class="num">1.0 / m</td><td>From 1.3 m.</td></tr>
+    <tr><td>Drift</td><td class="num">0.5 / m</td><td>From where it started: the gate is behind and set 1 ahead.</td></tr>
+    <tr><td>Done</td><td class="num">+5</td><td>Level again after the last quarter.</td></tr>
+    <tr><td>Lost</td><td class="num">−5</td><td>More than 180° from the next stop.</td></tr>
+  </tbody>
+</table></div>
 
 <h2 id="runner">The mission runner and done detectors</h2>
-<p>The runner (<code>TasksMissionRunner</code> in <code>tasks_mission.py</code>) says what to do, never how. It's a plain list of five (skill, side) steps, each flown by its policy until that skill's done detector says it's finished; then it holds depth and heading. There are no scripted stages, maneuvers or switching rules. Each step starts its skill with a fresh observation, as in training, except the turnaround, which keeps the slalom's memory of set 3.</p>
+<p>The runner (<code>TasksMissionRunner</code> in <code>tasks_mission.py</code>) says what to do, never how. It's a plain list of six (skill, side) steps, each flown by its policy until that skill's done detector says it's finished; then it holds depth and heading. There are no scripted stages, maneuvers or switching rules. Each step starts its skill with a fresh observation, as in training, except the turnaround, which keeps the slalom's memory of set 3.</p>
 <div class="table-wrap"><table>
   <thead><tr><th>Step</th><th>Skill</th><th>Side</th></tr></thead>
   <tbody>
     <tr><td>Gate</td><td>gate</td><td>the passage nearer the image center at first sight (as scripted)</td></tr>
+    <tr><td>Dance</td><td>dance, then rise to 1.3 m on its starting heading</td><td></td></tr>
     <tr><td>Slalom out</td><td>slalom (all three sets)</td><td>the same</td></tr>
     <tr><td>Turn around</td><td>turnaround</td><td>the opposite (the same physical lane, now on the sub's other side)</td></tr>
     <tr><td>Slalom back</td><td>slalom (all three sets)</td><td>the opposite</td></tr>
@@ -438,63 +508,73 @@
   </tbody>
 </table></div>
 <p>No dive step: the gate skill trained from starts as shallow as the mission's 0.5 m.</p>
+<p>The dance has no done detector: its own observation says when it is level again after the full roll back (held 2.5 s), and it gives up after 120 s, its training limit. It flies through its own driver, with the heading gains halved. Afterwards the runner holds the dance's starting heading and rises to 1.3 m before the slalom takes over. The dance ends about 0.4 m deeper (it rolls at 1.8 m) and 0.3 m farther on, and the slalom started from there failed the way back three times as often: 277/300 against 286/300 without the dance. With the rise: 287/300. <code>TasksMissionRunner(dance_path=None)</code> (or <code>--no-dance</code> in the scorer) leaves the dance out.</p>
 <h3>Done detectors (<code>done_detector.py</code>, <code>tools/train_done_detector.py</code>)</h3>
-<p>As in the qualification project: a small network (128-128) reading the policy's own observation, trained by supervised learning on 800–1,500 flights of the skill's own policy, each moment labeled with ground truth (through and 1.5 m beyond: the gate, or the slalom's last set; placed and facing, for the turnaround). numpy only, so it runs on the Pi.</p>
+<p>As in the qualification project: a small network (128-128) reading the policy's own observation, trained by supervised learning on 800–1,500 flights of the skill's own policy (the gate's half from the mission's own starts, the slalom's half from lead-ins), each moment labeled with ground truth (through and 1.5 m beyond: the gate, or the slalom's last set; placed and facing, for the turnaround). numpy only, so it runs on the Pi.</p>
 <p>Close to a gate or a set, the poles leave the 70° view, so the last meter before the line and the meters after it look alike. The first gate and slalom detectors fired 2.5–7 s early; the slalom's, about 2 m short of set 1, handed the next slalom step the same set again. They now also get a short history, all measured: the target's closest range while in view, the time since, and roughly how far the sub has driven since (its own surge commands added up). Per-moment accuracy went from 89% to 97% (slalom) and 91% to 96% (gate). Settings: 3 steps in a row above 0.5 (gate, turnaround) or 0.7 (slalom, with the moments before the pass weighted ×3 in training, because firing early breaks the mission while firing late doesn't).</p>
 <h3>Handoffs</h3>
 <p>Most of the work after the runner was making each skill's training starts match what the step before it really hands over:</p>
 <ul>
-  <li><strong>Turnaround:</strong> lead-in starts (see the skill). From ground-truth memory: its detector fired at once in the mission. From a lead-in through set 3: 67%, then 94% after fine-tuning. From a lead-in through the whole slalom, needed once the slalom became one skill: 80%, retraining now.</li>
+  <li><strong>Turnaround:</strong> lead-in starts (see the skill). From ground-truth memory: its detector fired at once in the mission. From a lead-in through set 3: 67%, then 94% after fine-tuning. From a lead-in through the whole slalom, needed once the slalom became one skill: 80%, then 96% fine-tuned on the noisy detector with the white poles' stale ranges redrawn (<code>--scramble-starts</code>), and retrained on each new slalom's handoffs since.</li>
+  <li><strong>Slalom back and gate back:</strong> slalom back starts flown in through the whole slalom and the turnaround (recrossing set 3 coming back went from 6 to 0 in 180 missions); gate returns started as the slalom hands over, moving, about 6 m out (the gate's failures, the most of any step, fell to 1–2).</li>
   <li><strong>Slalom, while it was one set per step:</strong> lead-in starts that flew the set before and handed over the same way. Episodes carried on 3 s past the finish, and crossing another line failed. With those, the nine-step mission reached 128/180. Making the slalom one skill removed four of the five handoffs instead.</li>
   <li><strong>Perception:</strong> one set at a time (see the observation). Fixing that took the one-set slalom from 79% to 90% on its training starts without retraining.</li>
 </ul>
 
 <h2 id="results">Results</h2>
-<p>All with the noisy detector, the thruster ramp and the measured thrust and drag, on 100 fresh test starts (seeds 10000+). "Varied" means dynamics varied as in training.</p>
-<h3>Full mission, 180 starts</h3>
+<p>All with the noisy detector, the thruster ramp, and the measured thrust (7.85 N) and estimated drag. Test starts are seeds 10000+ (and 20000+ or 30000+ where marked fresh), never used for training. "Varied" means dynamics varied as in training.</p>
+<h3>Full mission</h3>
 <div class="table-wrap"><table>
-  <thead><tr><th></th><th class="num">Nominal (10000+)</th><th class="num">Varied (10000+)</th><th class="num">Fresh (20000+)</th><th class="num">Total</th><th class="num">Time (median)</th></tr></thead>
+  <thead><tr><th></th><th class="num">Nominal (10000+)</th><th class="num">Varied (10000+)</th><th class="num">Fresh (20000+)</th><th class="num">Unseen (30000+)</th><th class="num">Total</th><th class="num">Time (median)</th></tr></thead>
   <tbody>
-    <tr><td>Scripted</td><td class="num">58/60</td><td class="num">58/60</td><td class="num">57/60</td><td class="num">173/180 (96%)</td><td class="num">~180 s</td></tr>
-    <tr class="hl"><td>Learned</td><td class="num">50/60</td><td class="num">35/60</td><td class="num">43/60</td><td class="num">128/180 (71%)</td><td class="num">~184 s</td></tr>
+    <tr><td>Scripted</td><td class="num">57/60</td><td class="num">57/60</td><td class="num">57/60</td><td class="num">110/120</td><td class="num">281/300 (93.7%)</td><td class="num">~134 s</td></tr>
+    <tr class="hl"><td>Learned</td><td class="num">58/60</td><td class="num">57/60</td><td class="num">59/60</td><td class="num">115/120</td><td class="num">289/300 (96.3%)</td><td class="num">~119 s</td></tr>
   </tbody>
 </table></div>
-<p>That learned row is the nine-step version: <code>tgate3_s0</code>, <code>tslalom8_ft_s4</code> (one set per step) and <code>tturn3_ft_s3</code>, each with its done detector beside it. Its failures were nearly all the slalom's, which ran six times a mission: crossing a set's line blind and slowly, hovering on it and crossing back (wrong course), and clipping a set's outer white pole. Varied dynamics hurt it most.</p>
-<h3>Five steps, the slalom as one skill (in progress)</h3>
+<p>The 30000+ seeds (60 nominal, 60 varied) were never used for choosing between policies. Neither mission dances here. The learned mission's failures are 1–3 per step, scattered; the scripted one's mostly wrong course and pole collisions.</p>
+<h3>With the dance</h3>
 <div class="table-wrap"><table>
-  <thead><tr><th>Slalom</th><th class="num">Nominal (10000+)</th><th class="num">Fresh (20000+)</th><th class="num">Time (median)</th></tr></thead>
+  <thead><tr><th>Learned mission, seeds 10000–10299, nominal</th><th class="num">Success</th><th class="num">Full dances</th><th class="num">Time (median)</th></tr></thead>
   <tbody>
-    <tr><td>One-set policy, unchanged (<code>tslalom8_dr</code>)</td><td class="num">39/60</td><td class="num">–</td><td class="num">172 s</td></tr>
-    <tr class="hl"><td>Fine-tuned on whole slaloms (<code>tslalom13_whole_s13</code>), turnaround detector retrained</td><td class="num">41/60</td><td class="num">46/60</td><td class="num">~175 s</td></tr>
+    <tr><td>No dance</td><td class="num">286/300</td><td class="num">–</td><td class="num">~119 s</td></tr>
+    <tr><td>Dance added</td><td class="num">277/300</td><td class="num">228 (13.8 of 16 stops)</td><td class="num">~223 s</td></tr>
+    <tr class="hl"><td>Dance, then rise to 1.3 m before the slalom</td><td class="num">287/300</td><td class="num">234 (13.8 of 16 stops)</td><td class="num">~224 s</td></tr>
   </tbody>
 </table></div>
-<p>About level with the nine-step version (93/120 on the same starts), and faster. The largest remaining failure is the turnaround timing out after a whole slalom (11 of 33): it drives away without turning, because it trained on memory left by flying set 3 alone. It's being fine-tuned now on lead-ins that fly the whole slalom. The next largest is wrong course on the slalom back, which starts wherever the turnaround leaves it.</p>
-<h3>Tried on the way, and not kept</h3>
-<ul>
-  <li><strong>Time since seen counting to 15 s</strong> (instead of 5) for the slalom: fine-tuned on it, the nine-step mission fell to 33–52%. Reverted.</li>
-  <li><strong>Dead reckoning plus fine-tuning on one-set episodes</strong>, gently and then harder with "blind-zone" starts (episodes beginning where the set leaves the view): the policy barely used the new input (its weights grew to about 0.1, against 1.7 for the rest), and the mission did no better, then worse (91, then 68 and 38 of 120, against 93). Hovering on the line was rare in one-set training, so training had little reason to learn the input. That pointed to training where the failures happen: the whole slalom.</li>
-</ul>
-<p> The scripted mission's failures are scattered pole collisions and a few wrong-course runs. Most of either's time is the sub's speed, 0.34 m/s in the sim.</p>
-<p>How the learned mission got there, on the first 20 or 60 nominal starts: 0/6 (the slalom steering for the next set's lane; detectors firing early) → 14/20 (one set per slalom step, detectors with history) → 17/20 and 40/60 (turnaround lead-ins) → 50/60 (slalom lead-ins, carrying on past the finish, no crossing other lines).</p>
+<p>The policies are <code>tgate5_785_s25</code>, <code>tslalom18_785_s23</code>, <code>tturn8_785_s22</code> and <code>tdance_bc8</code>, each with its done detector beside it. The remaining failures are about the noise of a 300-mission score: the learned mission is at its limit for now.</p>
 <h3>Each skill</h3>
 <div class="table-wrap"><table>
-  <thead><tr><th>Skill</th><th>Policy</th><th class="num">Nominal</th><th class="num">Varied</th><th class="num">Time (median)</th><th>Failures (nominal)</th></tr></thead>
+  <thead><tr><th>Skill</th><th>Policy</th><th class="num">Success</th><th>Notes</th></tr></thead>
   <tbody>
-    <tr><td>Gate</td><td><code>tgate3_s0</code></td><td class="num">91%</td><td class="num">92%</td><td class="num">29 s</td><td>7 collisions, 2 missed</td></tr>
-    <tr><td>Slalom (whole)</td><td><code>tslalom13_whole_s13</code></td><td class="num">76%</td><td class="num">–</td><td class="num">–</td><td>15 collisions, 5 missed, 2 wrong lane, 2 wrong course</td></tr>
-    <tr><td>Turnaround (from the whole slalom)</td><td><code>tturn3_dr</code></td><td class="num">80%</td><td class="num">–</td><td class="num">–</td><td>17 timeouts, 3 collisions</td></tr>
+    <tr><td>Gate</td><td><code>tgate5_785_s25</code></td><td class="num">91% of 100</td><td>half its return starts as the slalom hands over</td></tr>
+    <tr><td>Slalom (whole)</td><td><code>tslalom18_785_s23</code></td><td class="num">88% of 100</td><td>collisions most of the rest</td></tr>
+    <tr><td>Turnaround</td><td><code>tturn8_785_s22</code></td><td class="num">90% of 100</td><td>from whole-slalom lead-ins</td></tr>
+    <tr><td>Dance</td><td><code>tdance_bc8</code></td><td class="num">81% of 225</td><td>14.3 of 16 stops, ~101 s; lost 9%, out of time 10%</td></tr>
   </tbody>
 </table></div>
-<p>The scripted gate task on the gate skill's starts: 82%; the scripted slalom task on the whole slalom's starts: 42/60 (70%). The gate's search from any heading is part of its score. </p>
-<p>Earlier, with the slalom as one set per step, its training starts were harder than the mission's in one way: its score on them understated it. Every collision came from a start at least 0.5 m off the lane's center line, cutting in at 30–57° at the last moment with the poles already out of view; the mission doesn't hand over such starts (set 1 lines up with the gate's passages, and each set shifts at most 0.38 m). From the starts the mission does hand over:</p>
+<p>The skills score lower on their own test starts than in the mission: their starts are harder than what the mission hands over.</p>
+<h3>How it got there</h3>
 <div class="table-wrap"><table>
-  <thead><tr><th>Starts (50 each)</th><th class="num"><code>tslalom4_ft</code></th><th class="num"><code>tslalom6_ft_s1</code></th></tr></thead>
+  <thead><tr><th>Step</th><th class="num">Learned mission</th></tr></thead>
   <tbody>
-    <tr><td>After the gate: set 1 going out, 6–7 m before it, within 0.5 m of the lane's line</td><td class="num">31/50</td><td class="num">47/50</td></tr>
-    <tr><td>Between sets: 2–3 m before, within 0.5 m</td><td class="num">46/50</td><td class="num">50/50</td></tr>
+    <tr><td>Nine steps (one slalom set per step), detectors with history, lead-ins</td><td class="num">128/180 (71%)</td></tr>
+    <tr><td>The slalom as one skill; turnaround lead-ins through the whole slalom</td><td class="num">139/180</td></tr>
+    <tr><td>Slalom and turnaround fine-tuned on the noisy detector (they'd trained on the perfect one)</td><td class="num">156/180</td></tr>
+    <tr><td>Slalom back starts flown in; gate detector trained on the mission's own starts</td><td class="num">163/180 (91%)</td></tr>
+    <tr><td>The real thrust (7.85 N, not 3.56 N): skills and detectors fine-tuned</td><td class="num">159/180, ~119 s</td></tr>
+    <tr><td>Slalom on flown-in starts both ways; gate returns as the slalom hands over</td><td class="num">174/180; 289/300</td></tr>
+    <tr><td>The dance added, then the rise after it (another 300 starts; 286 without the dance)</td><td class="num">277/300, then 287/300</td></tr>
   </tbody>
 </table></div>
-<p>The gap after the gate came from the skill never having trained farther than 3.5 m out; 30% of its training starts are now 5–7.5 m before set 1 (<code>tslalom6_ft</code>, fine-tuned from <code>tslalom4_ft</code>; the second seed scored 46/50 and 50/50). The training-start score includes those, which is why it reads lower than the earlier 83%.</p>
+<p>At the old thrust the scripted mission scored 173/180 (~180 s). At the real thrust it first fell to 133/180, overshooting at the higher speed, until its timers were scaled to the speed.</p>
+<h3>Tried on the way, and not kept</h3>
+<ul>
+  <li><strong>Time since seen counting to 15 s</strong> (instead of 5) for the slalom: fine-tuned on it, the nine-step mission fell to 33–52%.</li>
+  <li><strong>Dead reckoning with one-set training:</strong> the policy barely used the new input (its weights grew to about 0.1, against 1.7 for the rest), and the mission did no better. Hovering on the line was rare in one-set training, so training had little reason to learn the input. That pointed to training where the failures happen: the whole slalom.</li>
+  <li><strong>A gate detector weighted against firing early:</strong> no better (8 early handoffs against 6). Training it on the mission's own starts worked instead.</li>
+  <li><strong>The halved heading gains for every skill:</strong> smoother, but outside the skills' training spread; the mission lost 11 of 180. Only the dance uses them.</li>
+  <li><strong>The dance by PPO alone</strong> (nine designs, about 300 CPU-hours), and <strong>PPO fine-tuning of the imitated dance</strong> (no better on 225 starts). See <a href="#dance">The victory dance</a>.</li>
+</ul>
 
 <h2 id="lessons">Lessons and design decisions</h2>
 <div class="lessons">
@@ -514,6 +594,12 @@
 <p><strong>"Best" on 30 test starts is noisy.</strong> Both whole-slalom runs saved their "best" checkpoint at 200k steps, from a lucky 97%. The mission ranked checkpoints differently again.</p>
 <p><strong>Seeds matter, and so does the sample.</strong> Two fine-tunes from the same checkpoint scored 50/60 and 36/60 in the mission; one policy scored 17/20, then 40/60. Score missions on many starts before believing a change.</p>
 <p><strong>Names matter on the real sub.</strong> The thruster mirroring never showed in simulation, because the sim and the mixer agreed. Only checking the doc's account of one decision against the real sub's geometry found it.</p>
+<p><strong>Check the units.</strong> The thrusters were 0.8 kgf, not 0.8 lbf: 2.2 times the thrust. Every skill and the scripted mission had to be retuned, and the depth loop, tuned for the weaker sub, rang for 20 s.</p>
+<p><strong>When exploring can't find the reward, show it.</strong> The dance's reward was right (a hand-flown dance earned +45.7, sitting still −14.3), but exploration never found a single full stop to learn from. Nine PPO designs got nowhere; imitating a hand controller learned it in hours.</p>
+<p><strong>Exploration noise is a physical shake.</strong> Noise on the actions doesn't just try new things; it moves the sub. Adding the training noise to a hand controller showed the dance couldn't be held that way at all, and that surge was the worst of it.</p>
+<p><strong>A teacher can see what the student can't; its labels mustn't contradict.</strong> The teacher saw the judges' count, the student only its own. Where the two disagreed by a step, one observation got both labels and the student split the difference. Make the student's view of "done" lag the truth, and have the teacher wait for it.</p>
+<p><strong>Count more strictly than the judges.</strong> They check every physics step; the sub's gyro reads at 10 Hz and misses spikes between readings. A margin on the sub's own count took the dance from 40% to 78%.</p>
+<p><strong>Check what each step leaves for the next.</strong> The dance itself didn't fail; it left the sub 0.4 m deeper, and the way back, minutes later, failed three times as often. Compare with and without on the same starts to see it.</p>
 <p><strong>Carried over from the qualification project:</strong> confirm detections over several frames; don't trust ranges the sensors can't support; watch for outputs pinned past their ±1 limit; watch runs, not just scores; learn "when" by supervision, not reward.</p>
 </div>
 
@@ -524,11 +610,13 @@
   <thead><tr><th>Task</th><th>Command</th></tr></thead>
   <tbody>
     <tr><td>Scripted mission in the window</td><td><code>.venv/bin/python main.py --course tasks --detector noisy</code></td></tr>
-    <tr><td>Watch the learned mission</td><td><code>.venv/bin/python watch.py tasks_mission --task tasks_mission</code></td></tr>
-    <tr><td>Score the learned mission</td><td><code>.venv/bin/python tools/score_tasks_mission.py --episodes 60 --seed 10000</code> (add <code>--randomize</code>, or <code>--slalom &lt;model.zip&gt;</code> to try another policy)</td></tr>
+    <tr><td>Watch the learned mission</td><td><code>.venv/bin/python watch.py tasks_mission --task tasks_mission --seed 10001 --speed 2</code> (the panel shows the roll, a view of the sub from behind, and the judges' dance count)</td></tr>
+    <tr><td>Score the learned mission</td><td><code>.venv/bin/python tools/score_tasks_mission.py --episodes 300 --seed 10000</code> (add <code>--randomize</code>, <code>--no-dance</code>, or <code>--slalom &lt;model.zip&gt;</code> and the like to try another policy)</td></tr>
+    <tr><td>Teach the dance by imitation</td><td><code>.venv/bin/python tools/imitate_dance.py --name &lt;run&gt; --rounds 8</code></td></tr>
+    <tr><td>Watch the dance alone</td><td><code>.venv/bin/python watch.py runs/tdance_bc8/best_model.zip --task tasks_dance</code></td></tr>
     <tr><td>Train a done detector</td><td><code>.venv/bin/python tools/train_done_detector.py --task tasks_slalom --policy &lt;model.zip&gt; --episodes 1500 --before-weight 3 --threshold 0.7 --confirm 3</code></td></tr>
     <tr><td>Carry a policy into the 128-input slalom layout</td><td><code>.venv/bin/python tools/expand_slalom_obs.py &lt;model.zip&gt; --task tasks_slalom --out runs/&lt;name&gt;</code></td></tr>
-    <tr><td>Watch one skill</td><td><code>.venv/bin/python watch.py &lt;model.zip&gt; --task tasks_gate</code> (or <code>tasks_slalom</code>, <code>tasks_turnaround</code>)</td></tr>
+    <tr><td>Watch one skill</td><td><code>.venv/bin/python watch.py &lt;model.zip&gt; --task tasks_gate</code> (or <code>tasks_slalom</code>, <code>tasks_turnaround</code>, <code>tasks_dance</code>)</td></tr>
     <tr><td>Train a skill</td><td><code>.venv/bin/python train.py --name &lt;run&gt; --task tasks_gate --detector noisy --randomize --target-kl 0.03 --envs 9</code></td></tr>
     <tr><td>Fine-tune</td><td>add <code>--resume &lt;model.zip&gt; --learning-rate 1e-4</code></td></tr>
     <tr><td>Score</td><td><code>.venv/bin/python tools/eval_gate.py &lt;model.zip or scripted&gt; --task tasks_gate --detector noisy --episodes 100 --seed 10000</code></td></tr>
@@ -542,9 +630,9 @@
     <tr><td>Settings and course</td><td><code>config.py</code> (<code>TasksConfig</code>), <code>course.py</code></td></tr>
     <tr><td>Simulation</td><td><code>sim_core.py</code>, <code>collision.py</code>, <code>sensor_model.py</code>, <code>detector_model.py</code></td></tr>
     <tr><td>Perception, observation, control (Pi)</td><td><code>tasks_perception.py</code>, <code>tasks_observation.py</code>, <code>perception.py</code>, <code>controller.py</code></td></tr>
-    <tr><td>Skills and training</td><td><code>sub_env.py</code>, <code>tasks_gate_env.py</code>, <code>tasks_slalom_env.py</code>, <code>tasks_turnaround_env.py</code>, <code>envs.py</code>, <code>train.py</code></td></tr>
-    <tr><td>Scripted mission</td><td><code>tasks_mission.py</code>, <code>ai/tasks/course_tasks.py</code>, <code>main.py</code>, <code>simulator.py</code></td></tr>
-    <tr><td>Display and tools</td><td><code>sim_view.py</code>, <code>watch.py</code>, <code>tools/eval_gate.py</code>, <code>tools/score_tasks_mission.py</code>, <code>tools/train_done_detector.py</code>, <code>tools/expand_slalom_obs.py</code>, <code>tools/check_tasks_perception.py</code></td></tr>
+    <tr><td>Skills and training</td><td><code>sub_env.py</code>, <code>tasks_gate_env.py</code>, <code>tasks_slalom_env.py</code>, <code>tasks_turnaround_env.py</code>, <code>tasks_dance_env.py</code>, <code>envs.py</code>, <code>train.py</code>, <code>tools/imitate_dance.py</code></td></tr>
+    <tr><td>Missions</td><td><code>tasks_mission.py</code> (scripted and learned, and the judging), <code>ai/tasks/course_tasks.py</code>, <code>main.py</code>, <code>simulator.py</code>, <code>done_detector.py</code></td></tr>
+    <tr><td>Display and tools</td><td><code>sim_view.py</code>, <code>watch.py</code>, <code>tools/eval_gate.py</code>, <code>tools/score_tasks_mission.py</code>, <code>tools/score_gate_starts.py</code>, <code>tools/train_done_detector.py</code>, <code>tools/expand_slalom_obs.py</code>, <code>tools/check_tasks_perception.py</code></td></tr>
   </tbody>
 </table></div>
 <p>The qualification course and its skills are still in the repo (<code>--course prequal</code>, <code>gate_env.py</code>, <code>orbit_env.py</code>, <code>mission.py</code>).</p>
@@ -554,17 +642,18 @@
   <tbody>
     <tr><td>Axes</td><td>x along the pool (start → gate → slalom), y across (positive to the left going out), z depth positive down</td></tr>
     <tr><td>Heading</td><td>degrees, 0 facing +x, increasing when turning left</td></tr>
+    <tr><td>Roll</td><td>degrees, positive with the right side down</td></tr>
     <tr><td>Bearing, sway, side</td><td>positive to the left, as the sub sees it</td></tr>
     <tr><td>Seeds</td><td>training 0+, test starts 10000+</td></tr>
   </tbody>
 </table></div>
 <h3>Next steps</h3>
 <ul>
-  <li>Finish the turnaround's retraining on whole-slalom handoffs; then score 180 missions (nominal, varied, fresh) against the scripted 173.</li>
-  <li>The slalom back: wrong course and collisions, starting where the turnaround leaves it.</li>
-  <li>Varied dynamics, which hurt the learned mission most (35/60 in the nine-step version).</li>
+  <li>Measure roll on the real sub: how fast it rights itself from a tilt. The righting moment, roll inertia and drag are guesses; the dance trained across ±50% of the guess.</li>
   <li>Measure the real sub's speed, which would calibrate the drag.</li>
-  <li>Later: the victory dance; export the actors to numpy for the Pi.</li>
+  <li>The dance's stalls: about one in ten counts a heading stop the judges didn't and carries on without them.</li>
+  <li>Optional: retrain the other skills on the halved heading gains, smoother at the real thrust.</li>
+  <li>Export the actors to numpy for the Pi. The camera model ignores roll (the viewer turns the picture), which matters only if a skill ever uses the camera while rolled.</li>
 </ul>
 
 <footer>RoboSubTasks1-3AI · ClassTech · This page is the design's source of truth; edit it alongside the code it describes.</footer>

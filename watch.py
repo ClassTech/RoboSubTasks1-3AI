@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Watch a controller fly a skill environment (--task gate or orbit) in the pygame
-window: the same episodes, starts and noise that training and
-tools/eval_gate.py use.
+Watch a controller fly a skill environment or a whole mission (--task) in the
+pygame window: the same episodes, starts and noise that training and the
+scorers use.
 
 The panel shows the controller's action, the reward, and what the policy
 believes about the gate (and the marker, for the orbit) next to the truth.
@@ -12,6 +12,8 @@ Usage:
   .venv/bin/python watch.py straight --detector perfect
   .venv/bin/python watch.py runs/gate/best_model.zip --speed 2
   .venv/bin/python watch.py scripted --task orbit
+  .venv/bin/python watch.py tasks_mission --task tasks_mission --seed 10001 --speed 2
+  .venv/bin/python watch.py runs/tdance_bc8/best_model.zip --task tasks_dance
 
 Keys: SPACE pause, N single physics step while paused, R restart the episode,
 ENTER next episode, Q or ESC quit.
@@ -75,18 +77,25 @@ class Viewer:
             label = "Scripted state" if isinstance(self.controller, ScriptedController) else "Phase"
             lines.append(f"{label}: {self.controller.state_name()}")
         act = self.controller.last_action
-        if act is not None and getattr(self.controller, "dancing", False):
+        dance_alone = hasattr(env, "judge")   # The dance env: its actions are turn, depth, roll
+        if act is not None and (dance_alone or getattr(self.controller, "dancing", False)):
             lines.append(f"Action: turn {act[0]:+.2f}, depth {DANCE_DEPTH_M[0] + (act[1] + 1) / 2 * (DANCE_DEPTH_M[1] - DANCE_DEPTH_M[0]):.2f} m, "
                          f"roll {act[2]:+.2f}")
         elif act is not None:
             depth = DEPTH_MIN + (act[1] + 1) / 2 * (DEPTH_MAX - DEPTH_MIN)
             sway = f", sway {act[3]:+.2f}" if len(act) > 3 else ""
             lines.append(f"Action: turn {HEADING_CHANGE_DEG * act[0]:+5.1f} deg, depth {depth:.2f} m, surge {act[2]:+.2f}{sway}")
-        rel_heading = (r.heading - env.builder.start_heading + 180) % 360 - 180 if env.builder.start_heading is not None else 0.0
+        start = getattr(env.builder, "start_heading", None)
+        rel_heading = (r.heading - start + 180) % 360 - 180 if start is not None else 0.0
         lines += [f"Sub: depth {r.depth:.2f} m, heading {rel_heading:+.0f} deg from start, pitch {r.pitch:+.1f} deg, roll {r.roll:+.0f} deg",
                   ""]
         if getattr(env, "dance_judge", None) or getattr(env, "dance_stops", 0):
             lines.insert(-1, f"Dance: judges counted {env.dance_stops} of 16 stops")
+        if dance_alone:
+            b = env.builder
+            lines.insert(-1, f"Dance: judges counted {env.stage} of 16 stops; turned {b.turned:+.0f} deg (target {env.turn_target:+.0f}), "
+                             f"rolled {b.rolled:+.0f} deg, own hold {b.still:.1f} s{' (done)' if b.stop_done else ''}")
+            return lines
         if env.core.course_kind == "tasks":
             return lines + self._tasks_lines()
         b = env.builder
