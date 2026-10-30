@@ -112,6 +112,9 @@ SEGMENT_SECONDS = 15.0
 ROLL_DEAD = 0.4
 LEVEL_P, LEVEL_D = 1 / 40.0, 1 / 200.0   # Roll effort per deg, per deg/s
 TARGET_DEPTH_M = 1.3
+DEPTH_RANGE_M = (1.0, 1.8)   # Deep before rolling: the rolls use all the vertical thrust, and the sub rises ~0.1 m/s
+HEADING_GAIN_SCALE = 0.5     # The heading gains halved: at the real thrust the defaults wobble up to 14 deg/s
+                             # holding a heading, past the stops' STILL_DPS (controller.ControllerGains)
 FIELDS = ["depth", "depth_rate", "pitch", "yaw_rate", "turned", "deepest", "still", "target", "stop_done",
           "roll_sin", "roll_cos", "roll_rate", "rolled", "rolled_most", "level"]
 
@@ -161,16 +164,102 @@ class DanceObservation:
         return np.concatenate(list(reversed(self.frames)))
 
 
+class DanceDriver:
+    """The dance's actions as setpoints and thruster commands, for its env and for the mission."""
+    def __init__(self, controller, control_period: float):
+        self.controller, self.control_period = controller, control_period
+        self.reset()
+
+    def reset(self, turned: float = 0.0):
+        self.turn_target, self.turn_dir = turned, 0.0   # turn_dir: the way it last slewed, + counterclockwise
+        self.turn_from = turned   # The quarter this push started from
+
+    def act(self, action, heading: float, turned: float):
+        """Returns (target heading, target depth, driver) for one control period; turned is the
+        observation's own count of the heading turned since the dance began."""
+        a = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)
+        self._slew_turn(float(a[0]))
+        turn = float(np.clip(self.turn_target - turned, -HEADING_CHANGE_DEG, HEADING_CHANGE_DEG))
+        target_heading = (heading + turn) % 360
+        target_depth = DEPTH_RANGE_M[0] + (float(a[1]) + 1) / 2 * (DEPTH_RANGE_M[1] - DEPTH_RANGE_M[0])
+        push = float(a[2])
+
+        def driver(r, detections, dt: float):
+            if abs(push) > ROLL_DEAD:
+                roll = math.copysign((abs(push) - ROLL_DEAD) / (1 - ROLL_DEAD), push)
+            else:
+                roll = -LEVEL_P * r.roll - LEVEL_D * math.degrees(r.imu.gyro_x)
+            return self.controller.update(dt, r.depth, r.depth_rate, r.heading, r.pitch, r.imu.gyro_y,
+                                          r.imu.gyro_z, target_heading, target_depth, 0.0, 0.0, roll, r.roll)
+        return target_heading, target_depth, driver
+
+    def _slew_turn(self, a: float):
+        """The turn action: slews the target past TURN_DEAD, up to a quarter from where the push began;
+        inside, snaps it to a quarter (on to the next past TURN_COMMIT_DEG, else back)."""
+        if abs(a) > TURN_DEAD:
+            rate = (abs(a) - TURN_DEAD) / (1 - TURN_DEAD) * TURN_DPS
+            self.turn_dir = -math.copysign(1.0, a)
+            self.turn_target += self.turn_dir * rate * self.control_period
+            lo, hi = max(TURN_LIMITS_DEG[0], self.turn_from - 90.0), min(TURN_LIMITS_DEG[1], self.turn_from + 90.0)
+            self.turn_target = min(max(self.turn_target, lo), hi)
+            return
+        if self.turn_dir < 0:
+            self.turn_target = 90.0 * math.floor((self.turn_target + TURN_COMMIT_DEG) / 90.0)
+        elif self.turn_dir > 0:
+            self.turn_target = 90.0 * math.ceil((self.turn_target - TURN_COMMIT_DEG) / 90.0)
+        else:
+            self.turn_target = 90.0 * round(self.turn_target / 90.0)
+        self.turn_from = self.turn_target
+
+
+class DanceJudge:
+    """The judges' count of the dance's stops, on the true heading and roll, every physics step."""
+    def __init__(self, state, stage: int = 0, turned: float = 0.0, rolled: float = 0.0):
+        self.true_turned, self._last_true = turned, state.heading
+        self.true_rolled, self._last_roll = rolled, state.roll
+        self.stage, self.held = stage, 0.0
+
+    @property
+    def done(self) -> bool:
+        return self.stage >= len(STAGES)
+
+    def err_deg(self) -> float:
+        axis, angle = STAGES[min(self.stage, len(STAGES) - 1)]
+        return (self.true_turned if axis == "yaw" else self.true_rolled) - angle
+
+    def update(self, s, dt: float) -> Optional[str]:
+        """Counts this physics step; returns "lost" once more than 180 deg off the stop."""
+        self.true_turned += angle_diff(s.heading, self._last_true)
+        self.true_rolled += angle_diff(s.roll, self._last_roll)
+        self._last_true, self._last_roll = s.heading, s.roll
+        if self.done:
+            return None
+        err = self.err_deg()
+        if abs(err) > 180.0:
+            return "lost"
+        axis, _ = STAGES[self.stage]
+        if axis == "roll" and self.stage < len(STAGES) - 1:
+            if abs(err) < ROLL_PASS_DEG:
+                self.stage, self.held = self.stage + 1, 0.0
+            return None
+        rate = s.angular_velocity_z if axis == "yaw" else s.angular_velocity_x
+        still = STILL_DPS if axis == "yaw" else 2 * STILL_DPS
+        hold = HOLD_S if axis == "yaw" else LEVEL_HOLD_S
+        if abs(err) < STOP_DEG and abs(math.degrees(rate)) < still:
+            self.held += dt
+            if self.held >= hold:
+                self.stage, self.held = self.stage + 1, 0.0
+        else:
+            self.held = 0.0
+        return None
+
+
 class TasksDanceEnv(SubTaskEnv):
     COURSE = "tasks"
     OUTCOMES = ("is_success", "collision", "lost", "surfaced", "timeout")
     EXTRA_INFO = ("stops",)
     ACTION_DIM = 3   # No surge: exploring it shook the sub off its stops (hand controller 95% -> 50%)
-    MIN_TARGET_DEPTH_M = 1.0
-    MAX_TARGET_DEPTH_M = 1.8   # Deep before rolling: the rolls use all the vertical thrust, and the sub rises ~0.1 m/s
     RIGHTING_SCALE = (0.5, 1.5)   # Training: the roll righting moment is a guess, so vary it widely
-    HEADING_GAIN_SCALE = 0.5      # The heading gains halved: at the real thrust the defaults wobble up to 14 deg/s
-                                  # holding a heading, past the stops' STILL_DPS (controller.ControllerGains)
 
     def __init__(self, detector_mode: str = "noisy", control_period: float = 0.1, max_seconds: float = 120.0,
                  randomize: bool = False, side: Optional[int] = None, stage_share: float = 0.0, segment: int = 0):
@@ -182,6 +271,7 @@ class TasksDanceEnv(SubTaskEnv):
         super().__init__(detector_mode, control_period, max_seconds, energy_penalty=0.05, time_penalty=0.01,
                          progress_weight=1.0, timeout_penalty=5.0, randomize=randomize)
         self.builder = DanceObservation()
+        self.dancer = DanceDriver(self.controller, control_period)
         import gymnasium as gym
         self.observation_space = gym.spaces.Box(-10.0, 10.0, shape=(self.builder.size,), dtype=np.float32)
 
@@ -209,8 +299,8 @@ class TasksDanceEnv(SubTaskEnv):
     def _vary_dynamics(self, rng: random.Random):
         super()._vary_dynamics(rng)
         g = self.controller.gains
-        g.heading_p *= self.HEADING_GAIN_SCALE
-        g.yaw_d *= self.HEADING_GAIN_SCALE
+        g.heading_p *= HEADING_GAIN_SCALE
+        g.yaw_d *= HEADING_GAIN_SCALE
 
     def _on_reset(self):
         s = self.core.state
@@ -220,83 +310,31 @@ class TasksDanceEnv(SubTaskEnv):
         rolled = roll_done[-1] if roll_done else 0.0
         deepest, rolled_most = min([0.0] + yaw_done), max([0.0] + roll_done)
         self.start_xy, self.start_heading = (s.x, s.y), self._start_heading
-        self.true_turned, self._last_true = turned, s.heading
-        self.true_rolled, self._last_roll = rolled, s.roll
-        self.stage, self.held = k, 0.0
-        self.turn_target, self.turn_dir = turned, 0.0   # turn_dir: the way it last slewed, + counterclockwise
-        self.turn_from = turned   # The quarter this push started from
+        self.judge = DanceJudge(s, k, turned, rolled)
+        self.dancer.reset(turned)
         self.builder.reset(turned, deepest, rolled, rolled_most, stop_done=True)   # The start (or last stop) needs no hold
+
+    @property
+    def stage(self) -> int:
+        return self.judge.stage
+
+    @property
+    def turn_target(self) -> float:
+        return self.dancer.turn_target
 
     # --- Acting ---
     def step(self, action):
-        a = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)
-        self._slew_turn(float(a[0]))
-        turn = float(np.clip(self.turn_target - self.builder.turned, -HEADING_CHANGE_DEG, HEADING_CHANGE_DEG))
-        self.target_heading = (self.readings.heading + turn) % 360
-        self.target_depth = self.MIN_TARGET_DEPTH_M + (float(a[1]) + 1) / 2 * (self.MAX_TARGET_DEPTH_M - self.MIN_TARGET_DEPTH_M)
-        push = float(a[2])
-
-        def driver(r, detections, dt: float):
-            if abs(push) > ROLL_DEAD:
-                roll = math.copysign((abs(push) - ROLL_DEAD) / (1 - ROLL_DEAD), push)
-            else:
-                roll = -LEVEL_P * r.roll - LEVEL_D * math.degrees(r.imu.gyro_x)
-            return self.controller.update(dt, r.depth, r.depth_rate, r.heading, r.pitch, r.imu.gyro_y,
-                                          r.imu.gyro_z, self.target_heading, self.target_depth, 0.0, 0.0, roll, r.roll)
-        self.last_action = a
+        self.target_heading, self.target_depth, driver = self.dancer.act(action, self.readings.heading,
+                                                                         self.builder.turned)
+        self.last_action = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)
         return self.step_with_driver(driver)
 
-    def _slew_turn(self, a: float):
-        """The turn action: slews the target past TURN_DEAD, up to a quarter from where the push began;
-        inside, snaps it to a quarter (on to the next past TURN_COMMIT_DEG, else back)."""
-        if abs(a) > TURN_DEAD:
-            rate = (abs(a) - TURN_DEAD) / (1 - TURN_DEAD) * TURN_DPS
-            self.turn_dir = -math.copysign(1.0, a)
-            self.turn_target += self.turn_dir * rate * self.control_period
-            lo, hi = max(TURN_LIMITS_DEG[0], self.turn_from - 90.0), min(TURN_LIMITS_DEG[1], self.turn_from + 90.0)
-            self.turn_target = min(max(self.turn_target, lo), hi)
-            return
-        if self.turn_dir < 0:
-            self.turn_target = 90.0 * math.floor((self.turn_target + TURN_COMMIT_DEG) / 90.0)
-        elif self.turn_dir > 0:
-            self.turn_target = 90.0 * math.ceil((self.turn_target - TURN_COMMIT_DEG) / 90.0)
-        else:
-            self.turn_target = 90.0 * round(self.turn_target / 90.0)
-        self.turn_from = self.turn_target
-
     # --- Judging ---
-    def _err_deg(self) -> float:
-        axis, angle = STAGES[min(self.stage, len(STAGES) - 1)]
-        return (self.true_turned if axis == "yaw" else self.true_rolled) - angle
-
     def _physics_outcome(self) -> Optional[str]:
-        s, dt = self.core.state, self.core.config.physicsDt
-        self.true_turned += angle_diff(s.heading, self._last_true)
-        self.true_rolled += angle_diff(s.roll, self._last_roll)
-        self._last_true, self._last_roll = s.heading, s.roll
-        if self.stage >= len(STAGES):
-            return None
-        err = self._err_deg()
-        if abs(err) > 180.0:
-            return "lost"
-        axis, _ = STAGES[self.stage]
-        if axis == "roll" and self.stage < len(STAGES) - 1:
-            if abs(err) < ROLL_PASS_DEG:
-                self.stage, self.held = self.stage + 1, 0.0
-            return None
-        rate = s.angular_velocity_z if axis == "yaw" else s.angular_velocity_x
-        still = STILL_DPS if axis == "yaw" else 2 * STILL_DPS
-        hold = HOLD_S if axis == "yaw" else LEVEL_HOLD_S
-        if abs(err) < STOP_DEG and abs(math.degrees(rate)) < still:
-            self.held += dt
-            if self.held >= hold:
-                self.stage, self.held = self.stage + 1, 0.0
-        else:
-            self.held = 0.0
-        return None
+        return self.judge.update(self.core.state, self.core.config.physicsDt)
 
     def done_label(self) -> bool:
-        return self.stage >= len(STAGES)
+        return self.judge.done
 
     def _complete(self) -> bool:
         if self.segment:
@@ -314,8 +352,8 @@ class TasksDanceEnv(SubTaskEnv):
         else:
             axis, _ = STAGES[self.stage]
             hold = HOLD_S if axis == "yaw" else LEVEL_HOLD_S
-            stages_part = 3.0 * self.stage - abs(self._err_deg()) / 90.0 + self.held / hold
-            off_axis = abs(s.roll) / 90.0 if axis == "yaw" else abs(self.true_turned) / 90.0
+            stages_part = 3.0 * self.stage - abs(self.judge.err_deg()) / 90.0 + self.judge.held / hold
+            off_axis = abs(s.roll) / 90.0 if axis == "yaw" else abs(self.judge.true_turned) / 90.0
         return stages_part - off_axis - 1.0 * abs(s.z - TARGET_DEPTH_M) - 0.5 * drift
 
     def _observe(self) -> np.ndarray:

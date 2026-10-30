@@ -29,7 +29,8 @@ def fly(job):
             obs, _, term, trunc, info = runner.step(env, obs)
             if term or trunc:
                 break
-        out.append((seed, next(k for k in env.OUTCOMES if info[k]), info["time_s"], runner.state_name()))
+        out.append((seed, next(k for k in env.OUTCOMES if info[k]), info["time_s"], runner.state_name(),
+                    info["dance_stops"]))
     return out
 
 
@@ -39,10 +40,13 @@ def main():
     parser.add_argument("--seed", type=int, default=10_000)
     parser.add_argument("--workers", type=int, default=10)
     parser.add_argument("--randomize", action="store_true")
-    for skill in ("gate", "slalom", "turnaround"):
+    for skill in ("gate", "slalom", "turnaround", "dance"):
         parser.add_argument(f"--{skill}", help=f"The {skill} policy (.zip, with its done_detector.npz beside it)")
+    parser.add_argument("--no-dance", action="store_true", help="Leave the dance out")
     args = parser.parse_args()
-    paths = {f"{k}_path": getattr(args, k) for k in ("gate", "slalom", "turnaround") if getattr(args, k)}
+    paths = {f"{k}_path": getattr(args, k) for k in ("gate", "slalom", "turnaround", "dance") if getattr(args, k)}
+    if args.no_dance:
+        paths["dance_path"] = None
     seeds = list(range(args.seed, args.seed + args.episodes))
     with Pool(args.workers) as pool:
         results = sorted(r for part in pool.map(fly, [(seeds[i::args.workers], paths, args.randomize)
@@ -53,7 +57,9 @@ def main():
     times = [r[2] for r in results if r[1] == "is_success"]
     if times:
         print(f"time to success: median {statistics.median(times):.0f} s")
-    for seed, outcome, _, step in results:
+    stops = [r[4] for r in results]
+    print(f"dance: {sum(s == 16 for s in stops)}/{n} danced in full, mean {statistics.mean(stops):.1f} of 16 stops")
+    for seed, outcome, _, step, _ in results:
         if outcome != "is_success":
             print(f"  {seed}: {outcome} during {step}")
 
