@@ -138,9 +138,39 @@ class SimView:
         for i, (label, v) in enumerate([("VL", t.vl), ("VR", t.vr)]):
             self._draw_thruster_bar(tx + 180 + i * 40, ty, label, v)
 
-        screen.blit(pygame.transform.scale(self.camera_surface, (400, 300)), (self.width - 420, 20))
+        cam = pygame.transform.scale(self.camera_surface, (400, 300))
+        if abs(core.state.roll) > 0.5:
+            # The camera model ignores roll (camera_geometry), so the picture is turned as a whole: rolled
+            # right side down, the scene turns counterclockwise. Scaled up so the corners stay filled.
+            turned = pygame.transform.rotozoom(cam, core.state.roll, 1.67)
+            cam = turned.subsurface(pygame.Rect((turned.get_width() - 400) // 2, (turned.get_height() - 300) // 2, 400, 300))
+        screen.blit(cam, (self.width - 420, 20))
         pygame.draw.rect(screen, BLACK, (self.width - 420, 20, 400, 300), 2)
+        self._draw_roll_gauge(core.state, self.width - 420, ty + 120)
         pygame.display.flip()
+
+    def _draw_roll_gauge(self, s, x, y, w: int = 400, h: int = 170):
+        """The sub seen from behind, rolled as it is (+ = right side down), on a level water line."""
+        pygame.draw.rect(self.screen, WATER_COLOR, (x, y, w, h))
+        pygame.draw.rect(self.screen, BLACK, (x, y, w, h), 2)
+        cx, cy = x + w / 2, y + h / 2 + 10
+        pygame.draw.line(self.screen, GRAY, (x + 10, cy), (x + w - 10, cy), 1)
+        a = math.radians(s.roll)
+        cos_r, sin_r = math.cos(a), math.sin(a)
+
+        def rolled(points):   # Body (right, up) seen from behind: right side down turns it clockwise on screen
+            return [(cx + dx * cos_r + dy * sin_r, cy + dx * sin_r - dy * cos_r) for dx, dy in points]
+
+        half_w, half_h = 60, 22
+        pygame.draw.polygon(self.screen, YELLOW, rolled([(-half_w, -half_h), (half_w, -half_h), (half_w, half_h), (-half_w, half_h)]))
+        pygame.draw.polygon(self.screen, BLACK, rolled([(-half_w, -half_h), (half_w, -half_h), (half_w, half_h), (-half_w, half_h)]), 2)
+        for side, label in ((-1, "L"), (1, "R")):   # The vertical thrusters, one each side
+            pygame.draw.circle(self.screen, BLACK, [int(v) for v in rolled([(side * (half_w - 14), 0)])[0]], 9, 2)
+            lx, ly = rolled([(side * (half_w + 14), 0)])[0]
+            surf = self.small_font.render(label, True, BLACK)
+            self.screen.blit(surf, (lx - surf.get_width() / 2, ly - surf.get_height() / 2))
+        self.screen.blit(self.small_font.render(f"From behind: roll {s.roll:+.0f} deg, depth {s.z:.2f} m", True, BLACK),
+                         (x + 8, y + 6))
 
     def _draw_sub(self, s):
         pos = self.world_to_screen(s.x, s.y)
