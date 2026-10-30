@@ -66,8 +66,8 @@ def env_kwargs(task: str, args, scoring: bool = False) -> dict:
     if task == "tasks_gate" and not scoring and args.gate_handoffs:
         from tasks_gate_env import TasksGateStarts
         return {"starts": TasksGateStarts(handoff_share=args.gate_handoffs), **randomize}
-    if task == "tasks_dance" and not scoring and args.roll_starts:
-        return {"roll_share": args.roll_starts, **randomize}
+    if task == "tasks_dance" and not scoring and (args.stage_starts or args.segment_stops):
+        return {"stage_share": args.stage_starts, "segment": args.segment_stops, **randomize}
     if task == "tasks_turnaround" and not scoring and args.scramble_starts:
         from tasks_turnaround_env import TurnaroundStarts
         return {"starts": TurnaroundStarts(scramble_share=args.scramble_starts), **randomize}
@@ -241,8 +241,10 @@ def main():
                         help="Turnaround training only: share of starts whose white poles' stale range details are redrawn")
     parser.add_argument("--back-lead-ins", type=float, default=0.0,
                         help="Slalom training only: share of back starts flown in through the whole slalom and the turnaround")
-    parser.add_argument("--roll-starts", type=float, default=0.0,
-                        help="Dance, training only: share of episodes that start at the roll part (the yaw part done)")
+    parser.add_argument("--stage-starts", type=float, default=0.0,
+                        help="Dance, training only: share of episodes that start partway through, at a random stop")
+    parser.add_argument("--segment-stops", type=int, default=0,
+                        help="Dance, training only: train on pieces of the dance this many stops long, from a random stop")
     parser.add_argument("--gate-handoffs", type=float, default=0.0,
                         help="Tasks gate, training only: share of return starts placed as the slalom hands over "
                              "(just past set 1, near the lane's line, moving)")

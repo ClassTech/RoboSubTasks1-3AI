@@ -18,15 +18,19 @@ Yaw, then roll (RoboSim's order):
 Judged on the true heading and roll, as the judges see them. Roll's numbers are
 guesses (config.py: nothing measured), so training varies the righting moment widely.
 
-Actions (4), at 10 Hz:
-  turn   where to point, measured from the dance's starting heading: -1..1 -> -400..+40
-         deg (clockwise negative). The controller steps toward it at most 45 deg per
-         action, the long way round when that's the way to it. (The first dance turned
-         relative to the current heading each step, like the other skills: holding a
-         stop for 3 s then needed a near-zero action 30 steps running, and with any
-         exploration it never counted one.)
+Actions (3), at 10 Hz:
+  turn   slews the turn target: past +-TURN_DEAD it moves at up to TURN_DPS (+ clockwise);
+         inside, the target snaps to the nearest quarter. Jitter averages out and a short
+         push snaps back, so holding a stop is easy; turning on is pushing one way ~0.75 s.
+         The target is measured from the dance's starting heading, -360..0 deg, and the
+         controller steps toward it at most 45 deg per action. Tried before: turning
+         relative to the current heading each step (holding a stop needed a near-zero action
+         30 steps running); an absolute target over 440 deg (exploring moved it +-80 deg a
+         step); a quarter fired on crossing +-0.5 (exploring fired it early in a stop's
+         hold and lost the stop, so the policy learned never to fire), and on 3 steps
+         running past it (the policy's output jittered and never held 3). None got past
+         the first stop.
   depth  target depth, 1.0-1.8 m
-  surge  open-loop forward/back thrust
   roll   open-loop roll effort: the side vertical thrusters pushed apart (+ = right side down)
 
 Observation (DanceObservation; measured only, numpy, runs on the Pi), per frame:
@@ -34,11 +38,15 @@ Observation (DanceObservation; measured only, numpy, runs on the Pi), per frame:
   turned       heading turned since the dance began (unwrapped magnetometer), /360
   deepest      the farthest clockwise turned so far, /360: -180 on the way out and
                on the way back look the same without it
-  still        seconds the yaw rate has stayed under STILL_DPS, /HOLD_S
+  still        seconds within STOP_DEG of the turn target and under STILL_DPS, /HOLD_S: the
+               stop's hold as the judges count it, measured. (Counting the yaw rate alone, a
+               policy couldn't tell when a stop had counted, and turning on early loses it, so
+               it learned never to turn on: tdance4.)
+  target       the turn target from the start, /360
   roll         sin and cos of the IMU's roll, and the roll rate
   rolled       roll since the dance began (unwrapped), /360, and the farthest so far
   level        seconds level and still in roll, /LEVEL_HOLD_S
-  last action  turn, depth, surge, roll
+  last action  turn, depth, roll
 4 frames stacked.
 
 Reward:
@@ -51,8 +59,14 @@ Reward:
   failures   -5 each: collision, surfaced, timeout, lost (more than 180 deg off)
   time       -0.01 per step;  energy  -0.05 per second at full thrust
 Starts: as the gate hands over, 1-2.5 m past it near a passage's line, facing on
-within 15 deg, 1.2-1.6 m deep, up to 0.3 m/s forward. In training, roll_share of
-episodes start at the roll part (the yaw part done), so it gets practised from the start.
+within 15 deg, 1.2-1.6 m deep, up to 0.3 m/s forward. In training, stage_share of
+episodes start partway through, at stop 1-15 with the previous one just done (turned or
+rolled there, and the counters to match), so every change of direction gets practised.
+With segment set, training episodes are pieces of the dance instead: each starts at a
+random stop (0-15) and succeeds after segment more, in SEGMENT_SECONDS each (the whole
+dance at once never learned more than one stop in 4M steps: tdance3-7). Before stage starts,
+started from the beginning only, a policy held the first stop and never tried turning on
+(tdance3), and one trained half from the roll part rolled right and never back.
 """
 import math
 import random
@@ -72,11 +86,14 @@ STILL_DPS = 5.0
 HOLD_S = 3.0
 ROLL_PASS_DEG = 15.0
 LEVEL_HOLD_S = 2.0
-TURN_RANGE_DEG = (-400.0, 40.0)
+TURN_LIMITS_DEG = (-360.0, 0.0)   # The turn target from the start, clockwise negative
+TURN_DEAD = 0.5
+TURN_DPS = 60.0
+SEGMENT_SECONDS = 15.0
 TARGET_DEPTH_M = 1.3
-FIELDS = ["depth", "depth_rate", "pitch", "yaw_rate", "turned", "deepest", "still",
+FIELDS = ["depth", "depth_rate", "pitch", "yaw_rate", "turned", "deepest", "still", "target",
           "roll_sin", "roll_cos", "roll_rate", "rolled", "rolled_most", "level",
-          "action_turn", "action_depth", "action_surge", "action_roll"]
+          "action_turn", "action_depth", "action_roll"]
 
 
 class DanceObservation:
@@ -88,26 +105,27 @@ class DanceObservation:
         self.size = self.frame_size * stack
         self.reset()
 
-    def reset(self, yaw_done: bool = False):
-        """yaw_done: start at the roll part, as if the yaw part had just finished."""
-        self.turned, self.deepest, self.still = 0.0, (-360.0 if yaw_done else 0.0), 0.0
-        self.rolled, self.rolled_most, self.level = 0.0, 0.0, 0.0
+    def reset(self, turned: float = 0.0, deepest: float = 0.0, rolled: float = 0.0, rolled_most: float = 0.0):
+        """Starting partway through the dance (training): the counters as the dance so far left them."""
+        self.turned, self.deepest, self.still = turned, deepest, 0.0
+        self.rolled, self.rolled_most, self.level = rolled, rolled_most, 0.0
         self._last_heading = self._last_roll = None
         self.frames: deque = deque(maxlen=self.stack)
 
-    def update(self, depth, depth_rate, heading, pitch, yaw_rate, roll, roll_rate, last_action, dt) -> np.ndarray:
+    def update(self, depth, depth_rate, heading, pitch, yaw_rate, roll, roll_rate, target, last_action, dt) -> np.ndarray:
         if self._last_heading is not None:
             self.turned += angle_diff(heading, self._last_heading)
             self.rolled += angle_diff(roll, self._last_roll)
         self._last_heading, self._last_roll = heading, roll
         self.deepest = min(self.deepest, self.turned)
         self.rolled_most = max(self.rolled_most, self.rolled)
-        self.still = self.still + dt if abs(math.degrees(yaw_rate)) < STILL_DPS else 0.0
+        on_stop = abs(self.turned - target) < STOP_DEG and abs(math.degrees(yaw_rate)) < STILL_DPS
+        self.still = self.still + dt if on_stop else 0.0
         level = abs(roll) < STOP_DEG and abs(math.degrees(roll_rate)) < 2 * STILL_DPS
         self.level = self.level + dt if level else 0.0
         r = math.radians(roll)
         frame = np.asarray([depth / 2.0, depth_rate / 0.5, pitch / 20.0, yaw_rate / 1.0,
-                            self.turned / 360.0, self.deepest / 360.0, min(self.still, 2 * HOLD_S) / HOLD_S,
+                            self.turned / 360.0, self.deepest / 360.0, min(self.still, 2 * HOLD_S) / HOLD_S, target / 360.0,
                             math.sin(r), math.cos(r), roll_rate / 3.0, self.rolled / 360.0,
                             self.rolled_most / 360.0, min(self.level, 2 * LEVEL_HOLD_S) / LEVEL_HOLD_S]
                            + [float(v) for v in last_action], dtype=np.float32)
@@ -122,7 +140,7 @@ class TasksDanceEnv(SubTaskEnv):
     COURSE = "tasks"
     OUTCOMES = ("is_success", "collision", "lost", "surfaced", "timeout")
     EXTRA_INFO = ("stops",)
-    ACTION_DIM = 4
+    ACTION_DIM = 3   # No surge: exploring it shook the sub off its stops (hand controller 95% -> 50%)
     MIN_TARGET_DEPTH_M = 1.0
     MAX_TARGET_DEPTH_M = 1.8   # Deep before rolling: the rolls use all the vertical thrust, and the sub rises ~0.1 m/s
     RIGHTING_SCALE = (0.5, 1.5)   # Training: the roll righting moment is a guess, so vary it widely
@@ -130,9 +148,12 @@ class TasksDanceEnv(SubTaskEnv):
                                   # holding a heading, past the stops' STILL_DPS (controller.ControllerGains)
 
     def __init__(self, detector_mode: str = "noisy", control_period: float = 0.1, max_seconds: float = 120.0,
-                 randomize: bool = False, side: Optional[int] = None, roll_share: float = 0.0):
-        """roll_share: share of episodes that start at the roll part (training)."""
-        self.roll_share = roll_share
+                 randomize: bool = False, side: Optional[int] = None, stage_share: float = 0.0, segment: int = 0):
+        """stage_share: share of episodes that start partway through the dance (training).
+        segment: train on pieces of the dance, this many stops each, from a random stop (training)."""
+        self.stage_share, self.segment = stage_share, segment
+        if segment:
+            max_seconds = SEGMENT_SECONDS * segment
         super().__init__(detector_mode, control_period, max_seconds, energy_penalty=0.05, time_penalty=0.01,
                          progress_weight=1.0, timeout_penalty=5.0, randomize=randomize)
         self.builder = DanceObservation()
@@ -147,7 +168,16 @@ class TasksDanceEnv(SubTaskEnv):
         s.z = rng.uniform(1.2, 1.6)
         speed = rng.uniform(0.0, 0.3)
         s.velocity_x, s.velocity_y = speed * math.cos(math.radians(s.heading)), speed * math.sin(math.radians(s.heading))
-        self._roll_start = rng.random() < self.roll_share
+        if self.segment:
+            self._start_stage = rng.randint(0, len(STAGES) - 1)
+        else:
+            self._start_stage = rng.randint(1, len(STAGES) - 1) if rng.random() < self.stage_share else 0
+        self._start_heading = s.heading
+        k = self._start_stage
+        if 0 < k <= len(YAW_STOPS):
+            s.heading = (s.heading + YAW_STOPS[k - 1]) % 360
+        elif k > len(YAW_STOPS):
+            s.roll = (ROLL_STOPS[k - 1 - len(YAW_STOPS)] + 180.0) % 360 - 180.0
         if self.randomize:
             self.core.config.rollRightingMoment *= rng.uniform(*self.RIGHTING_SCALE)
 
@@ -159,28 +189,41 @@ class TasksDanceEnv(SubTaskEnv):
 
     def _on_reset(self):
         s = self.core.state
-        self.start_xy, self.start_heading = (s.x, s.y), s.heading
-        self.true_turned, self._last_true = 0.0, s.heading
-        self.true_rolled, self._last_roll = 0.0, s.roll
-        self.stage = len(YAW_STOPS) if self._roll_start else 0
-        self.held = 0.0
-        self.builder.reset(yaw_done=self._roll_start)
+        k, n = self._start_stage, len(YAW_STOPS)
+        yaw_done, roll_done = YAW_STOPS[:min(k, n)], ROLL_STOPS[:max(0, k - n)]
+        turned = yaw_done[-1] if 0 < k <= n else 0.0
+        rolled = roll_done[-1] if roll_done else 0.0
+        deepest, rolled_most = min([0.0] + yaw_done), max([0.0] + roll_done)
+        self.start_xy, self.start_heading = (s.x, s.y), self._start_heading
+        self.true_turned, self._last_true = turned, s.heading
+        self.true_rolled, self._last_roll = rolled, s.roll
+        self.stage, self.held = k, 0.0
+        self.turn_target = turned
+        self.builder.reset(turned, deepest, rolled, rolled_most)
 
     # --- Acting ---
     def step(self, action):
         a = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)
-        lo, hi = TURN_RANGE_DEG
-        want = lo + (float(a[0]) + 1) / 2 * (hi - lo)
-        turn = float(np.clip(want - self.builder.turned, -HEADING_CHANGE_DEG, HEADING_CHANGE_DEG))
+        self._slew_turn(float(a[0]))
+        turn = float(np.clip(self.turn_target - self.builder.turned, -HEADING_CHANGE_DEG, HEADING_CHANGE_DEG))
         self.target_heading = (self.readings.heading + turn) % 360
         self.target_depth = self.MIN_TARGET_DEPTH_M + (float(a[1]) + 1) / 2 * (self.MAX_TARGET_DEPTH_M - self.MIN_TARGET_DEPTH_M)
-        surge, roll = float(a[2]), float(a[3])
+        roll = float(a[2])
 
         def driver(r, detections, dt: float):
             return self.controller.update(dt, r.depth, r.depth_rate, r.heading, r.pitch, r.imu.gyro_y,
-                                          r.imu.gyro_z, self.target_heading, self.target_depth, surge, 0.0, roll, r.roll)
+                                          r.imu.gyro_z, self.target_heading, self.target_depth, 0.0, 0.0, roll, r.roll)
         self.last_action = a
         return self.step_with_driver(driver)
+
+    def _slew_turn(self, a: float):
+        """The turn action: slews the target past TURN_DEAD, snaps it to the nearest quarter inside."""
+        if abs(a) > TURN_DEAD:
+            rate = (abs(a) - TURN_DEAD) / (1 - TURN_DEAD) * TURN_DPS
+            self.turn_target -= math.copysign(rate * self.control_period, a)
+            self.turn_target = min(max(self.turn_target, TURN_LIMITS_DEG[0]), TURN_LIMITS_DEG[1])
+        else:
+            self.turn_target = 90.0 * round(self.turn_target / 90.0)
 
     # --- Judging ---
     def _err_deg(self) -> float:
@@ -217,6 +260,8 @@ class TasksDanceEnv(SubTaskEnv):
         return self.stage >= len(STAGES)
 
     def _complete(self) -> bool:
+        if self.segment:
+            return self.stage >= min(len(STAGES), self._start_stage + self.segment)
         return self.done_label()
 
     def _terminal_reward(self, outcome: str) -> float:
@@ -237,7 +282,7 @@ class TasksDanceEnv(SubTaskEnv):
     def _observe(self) -> np.ndarray:
         r = self.readings
         obs = self.builder.update(r.depth, r.depth_rate, r.heading, r.pitch, r.imu.gyro_z, r.roll, r.imu.gyro_x,
-                                  np.asarray(self.last_action[:4]), self.control_period)
+                                  self.turn_target, np.asarray(self.last_action[:3]), self.control_period)
         return np.clip(obs, self.observation_space.low, self.observation_space.high)
 
     def _episode_info(self) -> dict:
