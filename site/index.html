@@ -1,0 +1,194 @@
+<title>RoboSub Tasks 1–3</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column; each run is a wide video with its caption beside it (stacked on phones). */
+:root {
+  --bg: #edf2f3;          /* pool-tile white with a cool cast */
+  --surface: #ffffff;
+  --ink: #10262d;
+  --muted: #4c6168;
+  --rule: #c9d6d9;
+  --gate: #c8361f;        /* the gate poles' red */
+  --lane: #1d6f78;        /* pool-lane teal */
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1a1e; --surface: #132529; --ink: #dce8ea; --muted: #93a8ad;
+    --rule: #2a3f44; --gate: #f06a4f; --lane: #4fb3bb; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c1a1e; --surface: #132529; --ink: #dce8ea; --muted: #93a8ad;
+  --rule: #2a3f44; --gate: #f06a4f; --lane: #4fb3bb; color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--ink);
+  font: 400 1.0625rem/1.6 var(--body);
+}
+.page {
+  max-width: 68rem; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 2.5rem 4rem;
+  display: grid; gap: 3.5rem;
+}
+h1, h2 { font-family: var(--display); font-weight: 700; line-height: 1.05; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.6rem, 6vw, 4.2rem); letter-spacing: 0.01em; }
+h2 { font-size: 1.9rem; }
+h3 { font: 600 1.35rem/1.15 var(--display); margin: 0; letter-spacing: 0.02em; }
+p { margin: 0; max-width: 65ch; }
+.eyebrow {
+  font: 600 0.8rem/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--gate);
+}
+header { display: grid; gap: 1rem; }
+header p { color: var(--muted); font-size: 1.15rem; }
+
+/* The course as a strip of lane markers */
+.route { display: flex; flex-wrap: wrap; gap: 0.4rem 0.25rem; align-items: center; font: 400 0.85rem/1 var(--mono); color: var(--muted); }
+.route span { padding: 0.35rem 0.55rem; border: 1px solid var(--rule); border-radius: 3px; background: var(--surface); }
+.route .g { border-color: var(--gate); color: var(--gate); }
+.route .d { border-color: var(--lane); color: var(--lane); }
+.route i { font-style: normal; color: var(--rule); }
+
+section { display: grid; gap: 1.5rem; }
+.run {
+  display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr); gap: 1.5rem; align-items: start;
+  padding-top: 1.5rem; border-top: 1px solid var(--rule);
+}
+.run video { width: 100%; max-width: 100%; aspect-ratio: 3 / 2; display: block; background: #5e8fbf; border-radius: 4px; }
+.run .text { display: grid; gap: 0.75rem; min-width: 0; }
+.run .text p { font-size: 1rem; }
+.stat { font: 400 0.9rem/1.5 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.stat b { color: var(--ink); font-weight: 600; }
+@media (max-width: 760px) { .run { grid-template-columns: 1fr; } }
+
+.key { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1rem 2rem; }
+.key div { display: grid; gap: 0.25rem; min-width: 0; }
+.key dt { font: 600 0.8rem/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--lane); }
+.key dd { margin: 0; font-size: 0.98rem; }
+
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; font-variant-numeric: tabular-nums; min-width: 32rem; }
+th, td { text-align: left; padding: 0.55rem 1.2rem 0.55rem 0; border-bottom: 1px solid var(--rule); }
+th { font: 600 0.8rem/1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+td.n { font-family: var(--mono); font-size: 0.95rem; }
+tr.lead td { font-weight: 600; }
+
+.compute { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 2rem; align-items: start; }
+@media (max-width: 760px) { .compute { grid-template-columns: 1fr; } }
+.big { font: 700 clamp(3rem, 8vw, 4.5rem)/1 var(--display); color: var(--gate); }
+.big small { font-size: 0.4em; color: var(--ink); font-weight: 600; margin-left: 0.3rem; }
+.bars { display: grid; gap: 0.6rem; }
+.bar { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) 4.2rem; gap: 0.75rem; align-items: center; font-size: 0.95rem; }
+.bar .track { height: 0.85rem; background: var(--rule); border-radius: 2px; overflow: hidden; }
+.bar .fill { height: 100%; background: var(--lane); }
+.bar .fill.dance { background: var(--gate); }
+.bar .h { font: 400 0.9rem/1 var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+.note { font-size: 0.95rem; color: var(--muted); }
+footer { font-size: 0.9rem; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 1.25rem; }
+footer code { font-family: var(--mono); font-size: 0.85rem; }
+a { color: var(--lane); text-underline-offset: 0.15em; }
+a:focus-visible { outline: 2px solid var(--gate); outline-offset: 2px; }
+header p .repo { font: 600 0.95rem/1 var(--mono); }
+</style>
+
+<div class="page">
+  <header>
+    <div class="eyebrow">Simulated RoboSub · gate, dance, slalom and back</div>
+    <h1>RoboSub Tasks 1–3, flown by learned skills</h1>
+    <p><a class="repo" href="https://github.com/ClassTech/RoboSubTasks1-3AI">Code on GitHub →</a></p>
+    <p>A simulated submarine starts in front of the divided gate, facing a random way. It goes through one side of the gate, then slaloms through three sets of poles on that same side, turns around, and comes back the same way. The scripted mission is hand-written code. The learned mission is four small neural networks that were trained in the simulator.</p>
+    <div class="route" aria-label="The course in order">
+      <span class="g">Gate</span><i>→</i><span class="d">Dance</span><i>→</i><span>Slalom 1</span><i>→</i><span>2</span><i>→</i><span>3</span><i>→</i><span>Turn around</span><i>→</i><span>3</span><i>→</i><span>2</span><i>→</i><span>1</span><i>→</i><span class="g">Gate</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="runs">
+    <h2 id="runs">Three runs from the same start</h2>
+    <p>All three start from the same position and heading (test seed 10001). The videos play at 2× real time.</p>
+
+    <article class="run">
+      <video src="scripted.mp4" poster="scripted.jpg" controls muted playsinline preload="metadata"></video>
+      <div class="text">
+        <h3>Scripted mission</h3>
+        <p>This is RoboSim's hand-written mission, adapted to this sub. A state machine finds the gate in the camera image, picks the side nearer the image center, and lines up on it. It stops to stabilize between tasks. It has no dance.</p>
+        <p class="stat">This run: <b>success, 137 s</b><br>300 test starts: <b>281 (93.7%)</b>, typically ~134 s</p>
+      </div>
+    </article>
+
+    <article class="run">
+      <video src="learned.mp4" poster="learned.jpg" controls muted playsinline preload="metadata"></video>
+      <div class="text">
+        <h3>Learned mission</h3>
+        <p>Three learned skills fly this run: gate, slalom (all three sets) and turnaround. A runner just names them in order. A small learned detector decides when each skill is finished. Ten times a second, the active skill picks a turn, a depth and a forward thrust, and the sub's own control loops fly them.</p>
+        <p class="stat">This run: <b>success, 119 s</b><br>300 test starts: <b>289 (96.3%)</b>, typically ~119 s</p>
+      </div>
+    </article>
+
+    <article class="run">
+      <video src="learned_dance.mp4" poster="learned_dance.jpg" controls muted playsinline preload="metadata"></video>
+      <div class="text">
+        <h3>With the victory dance</h3>
+        <p>After the gate, a fourth learned skill does the dance. It turns a full circle one way and then back, stopping at each quarter, then rolls all the way over to the right and back to the left. The judges count 16 quarter turns in all. It then levels out, comes back to depth on its starting heading, and the slalom skill takes over.</p>
+        <p class="stat">This run: <b>success, 204 s, 16 of 16 stops</b><br>300 test starts: <b>287 (95.7%)</b>, typically ~224 s; 78% scored all 16 stops</p>
+      </div>
+    </article>
+  </section>
+
+  <section aria-labelledby="screen">
+    <h2 id="screen">What's on the screen</h2>
+    <dl class="key">
+      <div><dt>Top view, left</dt><dd>The pool from above. The red dots are the gate's poles and the slalom's red poles; the white dots are the slalom's white poles. The blue line is the sub's track.</dd></div>
+      <div><dt>Camera, top right</dt><dd>The sub's forward camera. Boxes mark what the noisy detector found. During the roll, the picture turns with the sub.</dd></div>
+      <div><dt>Thrusters</dt><dd>The six thrusters' outputs: four horizontal, two vertical. The two vertical thrusters also roll the sub.</dd></div>
+      <div><dt>From behind</dt><dd>The sub seen from behind, with its roll and depth.</dd></div>
+      <div><dt>Text panel</dt><dd>The active phase, the skill's last action, the sensors' readings, and the gate and slalom passes so far.</dd></div>
+    </dl>
+  </section>
+
+  <section aria-labelledby="results">
+    <h2 id="results">Results on 300 test starts</h2>
+    <p>Each test start has its own random start position, sensor errors and noise. The starts were never used in training.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Mission</th><th>Succeeded</th><th>Typical time</th><th>Starts</th></tr></thead>
+        <tbody>
+          <tr><td>Scripted</td><td class="n">281 (93.7%)</td><td class="n">~134 s</td><td class="n">mixed set</td></tr>
+          <tr class="lead"><td>Learned</td><td class="n">289 (96.3%)</td><td class="n">~119 s</td><td class="n">mixed set</td></tr>
+          <tr><td>Learned, no dance</td><td class="n">286 (95.3%)</td><td class="n">~119 s</td><td class="n">10000–10299</td></tr>
+          <tr class="lead"><td>Learned, with the dance</td><td class="n">287 (95.7%)</td><td class="n">~224 s</td><td class="n">10000–10299</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="compute">
+    <h2 id="compute">How much computing the training took</h2>
+    <div class="compute">
+      <div style="display:grid;gap:0.75rem">
+        <div class="big">≈ 50 h<small>on one desktop</small></div>
+        <p>The training ran on a single 10-core Intel i9-10910 iMac, with no GPU. Each training run drove 9 simulators in parallel, and usually two runs shared the machine. That keeps all its cores busy for about 50 hours, or roughly <b>500 core-hours</b>.</p>
+        <p class="note">This is an estimate from the training logs of the 68 PPO runs still on disk (94 run-hours, 47 hours of machine time) plus 2 hours of dance imitation. It leaves out the done detectors and the scoring, which took minutes each. Most of the time went to experiments. The chain of runs behind the final policies took about 20 hours.</p>
+      </div>
+      <div class="bars" aria-label="Run-hours by skill">
+        <p class="stat" style="margin-bottom:0.25rem">Run-hours by skill, all experiments</p>
+        <div class="bar"><span>Gate</span><div class="track"><div class="fill" style="width:12%"></div></div><span class="h">4 h</span></div>
+        <div class="bar"><span>Slalom</span><div class="track"><div class="fill" style="width:84%"></div></div><span class="h">28 h</span></div>
+        <div class="bar"><span>Turnaround</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="h">34 h</span></div>
+        <div class="bar"><span>Dance (PPO)</span><div class="track"><div class="fill dance" style="width:82%"></div></div><span class="h">28 h</span></div>
+        <div class="bar"><span>Dance (imitation)</span><div class="track"><div class="fill dance" style="width:6%"></div></div><span class="h">2 h</span></div>
+        <p class="note">PPO alone never learned the dance well. Eight short rounds of imitating a hand-written controller did, in about 2 hours.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    The simulator runs at 60 Hz, with the sub's measured thrust (7.85 N per thruster), drag, thruster ramp-up, and a noisy camera, pressure sensor and IMU. The course follows ClassTech's RoboSim. Videos were recorded with <code>tools/record_run.py</code>.
+    The code, the simulator and the training setup are on GitHub: <a href="https://github.com/ClassTech/RoboSubTasks1-3AI">github.com/ClassTech/RoboSubTasks1-3AI</a>.
+  </footer>
+</div>

@@ -125,7 +125,7 @@ class SimView:
             screen.blit(self.small_font.render(line, True, BLACK), (20, y))
             y += 20
         y = self.height - 20 - 18 * (len(controls) + 1)
-        for c in ("Controls:", *controls):
+        for c in (("Controls:", *controls) if controls else ()):
             screen.blit(self.small_font.render(c, True, BLACK), (20, y))
             y += 18
 
