@@ -26,7 +26,7 @@ counts as progress:
   _episode_info()          optional extra numbers for info at the end (named in EXTRA_INFO)
 
 With randomize=True (training), each episode scales the controller gains,
-inertia, drag and thrust by factors from config.RandomizationConfig, after the
+inertia, drag, thrust and mass by factors from config.RandomizationConfig, after the
 start is placed (so a seed gives the same start either way).
   scripted_mission()       the scripted tasks that do this skill, for comparison
 OUTCOMES lists the possible endings ("is_success", "timeout" and the
@@ -164,11 +164,15 @@ class SubTaskEnv(gym.Env):
         d = {"inertia_yaw": rng.uniform(*rc.inertia_scale), "inertia_pitch": rng.uniform(*rc.inertia_scale),
              "drag_surge": rng.uniform(*rc.drag_scale), "drag_sway": rng.uniform(*rc.drag_scale),
              "drag_heave": rng.uniform(*rc.drag_scale), "drag_yaw": rng.uniform(*rc.drag_scale),
-             "drag_pitch": rng.uniform(*rc.drag_scale), "thrust": rng.uniform(*rc.thrust_scale)}
+             "drag_pitch": rng.uniform(*rc.drag_scale), "thrust": rng.uniform(*rc.thrust_scale),
+             "mass": rng.uniform(*rc.mass_scale)}
         c.subInertia_Z *= d["inertia_yaw"]; c.subInertia_Y *= d["inertia_pitch"]
         c.surgeDragCoeff *= d["drag_surge"]; c.swayDragCoeff *= d["drag_sway"]
         c.heaveDragCoeff *= d["drag_heave"]; c.angularDragCoeff_Z *= d["drag_yaw"]
         c.angularDragCoeff_Y *= d["drag_pitch"]; c.thrusterMaxForce *= d["thrust"]
+        extra = c.subMass * (d["mass"] - 1)   # Heavier or lighter at the same net buoyancy
+        c.subMass += extra; c.subVolume += extra / c.waterDensity
+        self.core.net_buoyancy = c.subVolume * c.waterDensity * c.gravity - c.subMass * c.gravity
         self.dynamics = {**d, **{f"gain_{k}": gains[k] / getattr(nominal, k) for k in gains if k != "depth_i_clamp"}}
 
     # --- Acting ---

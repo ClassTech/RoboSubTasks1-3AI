@@ -37,7 +37,11 @@ class SimulationConfig:
     thrusterArm: float = 0.2286 # Thrusters are mounted 9in from the sub's center (yaw and pitch lever arm, m)
 
     # --- NEW 3D Physics Properties ---
-    subMass: float = 4.0        # Mass (kg) 
+    # Mass (kg): ~7.5 from the parts (2026-11-23: electronics tube ~2.1, battery box ~0.8, six bilge-pump
+    # thrusters ~2.1, flooded 3/4in PVC frame ~2.2, the rest ~0.3), matching another sim's model (7.49).
+    # Not weighed. (4.0, a guess, until then; the skills lost 287 -> 274/300 at 7.5 before fine-tuning.)
+    # The water inside the flooded frame (~1.6 kg) and the added mass aren't modeled; training varies the mass.
+    subMass: float = 7.5
     # Rotational inertia, estimated from the layout: 3/4in PVC frame (~46 cm square,
     # ~1.1 kg, plus ~0.9 kg of water if flooded), 6 thrusters (~0.7 kg) at 9in,
     # 4x9in electronics tube (~1.3 kg) at the center, 4x6x4in battery box (~0.9 kg) on top.
@@ -73,8 +77,8 @@ class SimulationConfig:
     
     # Buoyancy
     gravity: float = 9.81
-    # --- MODIFIED: 0.0039 -> 0.0041 for ~1N positive buoyancy ---
-    subVolume: float = 0.0041 # (m^3) e.g., 4.1L
+    # Net buoyancy ~1 N up (0.1 kgf): the real sub is trimmed to drift up, as RoboSub's rules require
+    subVolume: float = 0.0076 # (m^3)
     # ---
     waterDensity: float = 1000.0 # (kg/m^3)
     # ---
@@ -111,13 +115,14 @@ class DetectorNoiseConfig:
 # --- Per-episode variation of the sub's dynamics (training only) ---
 # Each factor is drawn uniformly from (min, max) and multiplies the nominal value, so policies
 # don't come to depend on the sim's exact numbers (PID gains get retuned in the pool; inertia,
-# drag and thrust are estimates).
+# drag, thrust and mass are estimates).
 @dataclass
 class RandomizationConfig:
     pid_scale: Tuple[float, float] = (0.7, 1.3)       # Each controller gain, independently
     inertia_scale: Tuple[float, float] = (0.7, 1.3)   # Yaw and pitch inertia, independently
     drag_scale: Tuple[float, float] = (0.8, 1.2)      # Each drag coefficient, independently
     thrust_scale: Tuple[float, float] = (0.9, 1.1)    # All thrusters together
+    mass_scale: Tuple[float, float] = (0.8, 1.2)      # Mass (6-9 kg), at the same net buoyancy
 
 # --- Pre-Qualification Course Configuration ---
 @dataclass

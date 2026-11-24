@@ -108,9 +108,9 @@ class TasksMissionEnv(SubTaskEnv):
         return build_tasks_mission()
 
 
-GATE_POLICY = "runs/tgate5_785_s25/best_model.zip"
-SLALOM_POLICY = "runs/tslalom18_785_s23/best_model.zip"
-TURNAROUND_POLICY = "runs/tturn8_785_s22/best_model.zip"
+GATE_POLICY = "runs/tgate6_75kg_s28/best_model.zip"
+SLALOM_POLICY = "runs/tslalom19_75kg_s31/best_model.zip"
+TURNAROUND_POLICY = "runs/tturn10_75kg_s33/best_model.zip"
 DANCE_POLICY = "runs/tdance_bc8/best_model.zip"
 DANCE_GIVE_UP_S = 120.0   # The dance's time limit in training
 SETTLE_DEPTH_M, SETTLE_DPS, SETTLE_GIVE_UP_S = 0.1, 0.1, 10.0   # After the dance: back to HOLD_DEPTH_M before the slalom
