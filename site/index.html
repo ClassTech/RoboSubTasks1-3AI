@@ -118,7 +118,7 @@ header p .repo { font: 600 0.95rem/1 var(--mono); }
       <div class="text">
         <h3>Scripted mission</h3>
         <p>This is RoboSim's hand-written mission, adapted to this sub. A state machine finds the gate in the camera image, picks the side nearer the image center, and lines up on it. It stops to stabilize between tasks. It has no dance.</p>
-        <p class="stat">This run: <b>success, 137 s</b><br>300 test starts: <b>281 (93.7%)</b>, typically ~134 s</p>
+        <p class="stat">This run: <b>success, 143 s</b><br>300 test starts: <b>288 (96.0%)</b>, typically ~135 s</p>
       </div>
     </article>
 
@@ -127,7 +127,7 @@ header p .repo { font: 600 0.95rem/1 var(--mono); }
       <div class="text">
         <h3>Learned mission</h3>
         <p>Three learned skills fly this run: gate, slalom (all three sets) and turnaround. A runner just names them in order. A small learned detector decides when each skill is finished. Ten times a second, the active skill picks a turn, a depth and a forward thrust, and the sub's own control loops fly them.</p>
-        <p class="stat">This run: <b>success, 119 s</b><br>300 test starts: <b>289 (96.3%)</b>, typically ~119 s</p>
+        <p class="stat">This run: <b>success, 118 s</b><br>300 test starts: <b>282 (94.0%)</b>, typically ~120 s</p>
       </div>
     </article>
 
@@ -136,7 +136,7 @@ header p .repo { font: 600 0.95rem/1 var(--mono); }
       <div class="text">
         <h3>With the victory dance</h3>
         <p>After the gate, a fourth learned skill does the dance. It turns a full circle one way and then back, stopping at each quarter, then rolls all the way over to the right and back to the left. The judges count 16 quarter turns in all. It then levels out, comes back to depth on its starting heading, and the slalom skill takes over.</p>
-        <p class="stat">This run: <b>success, 204 s, 16 of 16 stops</b><br>300 test starts: <b>287 (95.7%)</b>, typically ~224 s; 78% scored all 16 stops</p>
+        <p class="stat">This run: <b>success, 205 s, 16 of 16 stops</b><br>300 test starts: <b>287 (95.7%)</b>, typically ~225 s; 77% scored all 16 stops</p>
       </div>
     </article>
   </section>
@@ -154,42 +154,42 @@ header p .repo { font: 600 0.95rem/1 var(--mono); }
 
   <section aria-labelledby="results">
     <h2 id="results">Results on 300 test starts</h2>
-    <p>Each test start has its own random start position, sensor errors and noise. The starts were never used in training.</p>
+    <p>Each test start has its own random start position, sensor errors and noise. All three missions flew the same 300 starts, which were never used in training or for choosing between policies.</p>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Mission</th><th>Succeeded</th><th>Typical time</th><th>Starts</th></tr></thead>
+        <thead><tr><th>Mission</th><th>Succeeded</th><th>Typical time</th></tr></thead>
         <tbody>
-          <tr><td>Scripted</td><td class="n">281 (93.7%)</td><td class="n">~134 s</td><td class="n">mixed set</td></tr>
-          <tr class="lead"><td>Learned</td><td class="n">289 (96.3%)</td><td class="n">~119 s</td><td class="n">mixed set</td></tr>
-          <tr><td>Learned, no dance</td><td class="n">286 (95.3%)</td><td class="n">~119 s</td><td class="n">10000–10299</td></tr>
-          <tr class="lead"><td>Learned, with the dance</td><td class="n">287 (95.7%)</td><td class="n">~224 s</td><td class="n">10000–10299</td></tr>
+          <tr><td>Scripted</td><td class="n">288 (96.0%)</td><td class="n">~135 s</td></tr>
+          <tr class="lead"><td>Learned</td><td class="n">282 (94.0%)</td><td class="n">~120 s</td></tr>
+          <tr class="lead"><td>Learned, with the dance</td><td class="n">287 (95.7%)</td><td class="n">~225 s</td></tr>
         </tbody>
       </table>
     </div>
+    <p class="note">The scripted and learned missions are even within the noise of 300 starts; the learned one is about 15 s faster. The sub's mass, an estimate from its parts, went from 4 kg to 7.5 kg in November. The learned skills had led the scripted mission at 4 kg, 289 to 281, and needed fine-tuning at 7.5 kg, where they coasted into poles. The scripted mission flew the heavier sub as well as ever.</p>
   </section>
 
   <section aria-labelledby="compute">
     <h2 id="compute">How much computing the training took</h2>
     <div class="compute">
       <div style="display:grid;gap:0.75rem">
-        <div class="big">≈ 50 h<small>on one desktop</small></div>
-        <p>The training ran on a single 10-core Intel i9-10910 iMac, with no GPU. Each training run drove 9 simulators in parallel, and usually two runs shared the machine. That keeps all its cores busy for about 50 hours, or roughly <b>500 core-hours</b>.</p>
-        <p class="note">This is an estimate from the training logs of the 68 PPO runs still on disk (94 run-hours, 47 hours of machine time) plus 2 hours of dance imitation. It leaves out the done detectors and the scoring, which took minutes each. Most of the time went to experiments. The chain of runs behind the final policies took about 20 hours.</p>
+        <div class="big">≈ 55 h<small>on one desktop</small></div>
+        <p>The training ran on a single 10-core Intel i9-10910 iMac, with no GPU. Each training run drove 9 simulators in parallel, and usually two runs shared the machine. That keeps all its cores busy for about 55 hours, or roughly <b>550 core-hours</b>.</p>
+        <p class="note">This is an estimate from the training logs of the 74 PPO runs still on disk (103 run-hours, about 51 hours of machine time) plus 2 hours of dance imitation. It leaves out the done detectors and the scoring, which took minutes each. Most of the time went to experiments. The chain of runs behind the final policies took about 25 hours, including the fine-tuning for the 7.5 kg sub.</p>
       </div>
       <div class="bars" aria-label="Run-hours by skill">
         <p class="stat" style="margin-bottom:0.25rem">Run-hours by skill, all experiments</p>
-        <div class="bar"><span>Gate</span><div class="track"><div class="fill" style="width:12%"></div></div><span class="h">4 h</span></div>
-        <div class="bar"><span>Slalom</span><div class="track"><div class="fill" style="width:84%"></div></div><span class="h">28 h</span></div>
-        <div class="bar"><span>Turnaround</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="h">34 h</span></div>
-        <div class="bar"><span>Dance (PPO)</span><div class="track"><div class="fill dance" style="width:82%"></div></div><span class="h">28 h</span></div>
-        <div class="bar"><span>Dance (imitation)</span><div class="track"><div class="fill dance" style="width:6%"></div></div><span class="h">2 h</span></div>
+        <div class="bar"><span>Gate</span><div class="track"><div class="fill" style="width:13%"></div></div><span class="h">5 h</span></div>
+        <div class="bar"><span>Slalom</span><div class="track"><div class="fill" style="width:84%"></div></div><span class="h">32 h</span></div>
+        <div class="bar"><span>Turnaround</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="h">38 h</span></div>
+        <div class="bar"><span>Dance (PPO)</span><div class="track"><div class="fill dance" style="width:74%"></div></div><span class="h">28 h</span></div>
+        <div class="bar"><span>Dance (imitation)</span><div class="track"><div class="fill dance" style="width:5%"></div></div><span class="h">2 h</span></div>
         <p class="note">PPO alone never learned the dance well. Eight short rounds of imitating a hand-written controller did, in about 2 hours.</p>
       </div>
     </div>
   </section>
 
   <footer>
-    The simulator runs at 60 Hz, with the sub's measured thrust (7.85 N per thruster), drag, thruster ramp-up, and a noisy camera, pressure sensor and IMU. The course follows ClassTech's RoboSim. Videos were recorded with <code>tools/record_run.py</code>.
+    The simulator runs at 60 Hz, with the sub's measured thrust (7.85 N per thruster), its estimated mass (7.5 kg), drag, thruster ramp-up, and a noisy camera, pressure sensor and IMU. The course follows ClassTech's RoboSim. Videos were recorded with <code>tools/record_run.py</code>.
     The code, the simulator and the training setup are on GitHub: <a href="https://github.com/ClassTech/RoboSubTasks1-3AI">github.com/ClassTech/RoboSubTasks1-3AI</a>.
   </footer>
 </div>

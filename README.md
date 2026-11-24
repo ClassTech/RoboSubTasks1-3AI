@@ -6,26 +6,26 @@ The design, results and lessons are in [docs/design.html](docs/design.html) (ope
 
 ## What it does
 
-- **Simulates the pool and the sub realistically.** The simulation covers physics at 60 Hz, the sub's real size and thruster layout, and its measured thrust (0.8 kgf, 7.85 N, per thruster). It includes the drag of its open frame, thrusters that ramp from zero to full in 0.5 s, and roll from the side vertical thrusters. Sensors (a 1280×960 camera, pressure, IMU with magnetometer) have noise and per-run errors. The course follows ClassTech's RoboSim.
+- **Simulates the pool and the sub realistically.** The simulation covers physics at 60 Hz, the sub's real size and thruster layout, its measured thrust (0.8 kgf, 7.85 N, per thruster), and its estimated mass (7.5 kg, trimmed about 1 N buoyant). It includes the drag of its open frame, thrusters that ramp from zero to full in 0.5 s, and roll from the side vertical thrusters. Sensors (a 1280×960 camera, pressure, IMU with magnetometer) have noise and per-run errors. The course follows ClassTech's RoboSim.
 - **Flies the course two ways:**
   - **Scripted:** RoboSim's hand-written mission, adapted to this sub. It is the baseline and has no dance.
   - **Learned:** four small neural-network skills, *gate*, *dance*, *slalom* (all three sets) and *turnaround*. A runner just names them in order. Each skill's small learned *done detector* says when it's finished.
-- **Trains the skills.** The gate, slalom and turnaround learn by PPO (Stable-Baselines3), with 9 simulators per run. Training varies the sub's gains, inertia, drag and thrust between runs, so the policies don't depend on exact numbers. The dance learned by imitating a hand controller, after PPO alone couldn't learn it.
+- **Trains the skills.** The gate, slalom and turnaround learn by PPO (Stable-Baselines3), with 9 simulators per run. Training varies the sub's gains, inertia, drag, thrust and mass between runs, so the policies don't depend on exact numbers. The dance learned by imitating a hand controller, after PPO alone couldn't learn it.
 
 The policies never drive the thrusters directly. Ten times a second they pick targets (turn, depth, and forward thrust; the dance picks roll instead of forward thrust). The sub's own control loops fly those targets.
 
 ## Where it stands
 
-With the noisy detector at the real thrust, on 300 test starts, without the dance:
+With the noisy detector, at the real thrust and the estimated mass, on 300 fresh test starts, without the dance:
 
 | Full mission | Success | Typical time |
 |---|---|---|
-| Scripted mission | 281/300 (93.7%) | ~134 s |
-| **Learned skills + done detectors** | **289/300 (96.3%)** | **~119 s** |
+| Scripted mission | 288/300 (96.0%) | ~135 s |
+| **Learned skills + done detectors** | **282/300 (94.0%)** | **~120 s** |
 
-With the victory dance after the gate, on another 300 starts, the learned mission succeeds 287 times, against 286 without the dance. That takes about 224 s, and 234 of the dances (78%) score all 16 stops. The dance's points are extra, so a short dance doesn't fail the run.
+The two are even within the noise; the learned mission is about 15 s faster. With the victory dance after the gate, on the same starts, the learned mission succeeds 287 times. That takes about 225 s, and 230 of the dances (77%) score all 16 stops. The dance's points are extra, so a short dance doesn't fail the run.
 
-Still to do: measure the real sub's roll and speed (the sim's values are estimates), and run the policies on the sub's Raspberry Pi.
+Still to do: measure the real sub's roll, speed and mass (the sim's values are estimates), and run the policies on the sub's Raspberry Pi.
 
 ## Setup
 
